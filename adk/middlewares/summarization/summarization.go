@@ -21,8 +21,10 @@ package summarization
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
@@ -39,6 +41,7 @@ func init() {
 type (
 	TokenCounterFunc      func(ctx context.Context, input *TokenCounterInput) (int, error)
 	GenModelInputFunc     func(ctx context.Context, defaultSystemInstruction, userInstruction adk.Message, originalMsgs []adk.Message) ([]adk.Message, error)
+	GetFailoverModelFunc  func(ctx context.Context, failoverCtx *FailoverContext) (failoverModel model.BaseChatModel, failoverModelInputMessages []*schema.Message, failoverErr error)
 	FinalizeFunc          func(ctx context.Context, originalMessages []adk.Message, summary adk.Message) ([]adk.Message, error)
 	CallbackFunc          func(ctx context.Context, before, after adk.ChatModelAgentState) error
 	UserMessageFilterFunc func(ctx context.Context, msg adk.Message) (bool, error)
@@ -53,7 +56,14 @@ type Config struct {
 	// Optional.
 	ModelOptions []model.Option
 
-	// TokenCounter calculates the token count for a message.
+	// TokenCounter calculates the token count for given messages and tools.
+	//
+	// Parameters:
+	//   - input: contains the messages and tools to count tokens for.
+	//
+	// Returns:
+	//   - int: the total token count.
+	//
 	// Optional. Defaults to a simple estimator (~4 chars/token).
 	TokenCounter TokenCounterFunc
 
@@ -67,6 +77,7 @@ type Config struct {
 	// Event Scoping:
 	//   - ActionTypeBeforeSummarize: emitted before calling model to generate summary
 	//   - ActionTypeAfterSummarize: emitted after summary generation completes
+	//
 	// Optional. Defaults to false.
 	EmitInternalEvents bool
 
@@ -84,9 +95,12 @@ type Config struct {
 	// GenModelInput allows full control over the summarization model input construction.
 	//
 	// Parameters:
-	//   - defaultSystemInstruction: System message defining the model's role
-	//   - userInstruction: User message with the task instruction
-	//   - originalMsgs: original complete message list
+	//   - defaultSystemInstruction: System message defining the model's role.
+	//   - userInstruction: User message with the task instruction.
+	//   - originalMsgs: original complete message list.
+	//
+	// Returns:
+	//   - []adk.Message: the constructed model input messages.
 	//
 	// Typical model input order: systemInstruction -> contextMessages -> userInstruction.
 	//
@@ -94,11 +108,24 @@ type Config struct {
 	GenModelInput GenModelInputFunc
 
 	// Finalize is called after summary generation. The returned messages are used as the final output.
+	//
+	// Parameters:
+	//   - originalMessages: the original conversation messages before summarization.
+	//   - summary: the generated summary message (post-processed).
+	//
+	// Returns:
+	//   - []adk.Message: the new conversation history to replace the original messages.
+	//
 	// Optional.
 	Finalize FinalizeFunc
 
 	// Callback is called after Finalize, before exiting the middleware.
 	// Read-only, do not modify state.
+	//
+	// Parameters:
+	//   - before: the agent state before summarization.
+	//   - after: the agent state after summarization.
+	//
 	// Optional.
 	Callback CallbackFunc
 
@@ -108,11 +135,22 @@ type Config struct {
 	// When disabled, the model-generated content is kept unchanged.
 	// Optional. Enabled by default.
 	PreserveUserMessages *PreserveUserMessages
+
+	// Retry configures retry behavior for summary generation on the primary model.
+	// Optional. Defaults to no retries.
+	Retry *RetryConfig
+
+	// Failover configures fallback behavior when summary generation on the primary model fails.
+	// Optional.
+	Failover *FailoverConfig
 }
 
+// TokenCounterInput is the input for TokenCounterFunc.
 type TokenCounterInput struct {
+	// Messages is the list of messages to count tokens for.
 	Messages []adk.Message
-	Tools    []*schema.ToolInfo
+	// Tools is the list of tools to count tokens for.
+	Tools []*schema.ToolInfo
 }
 
 // TriggerCondition specifies when summarization should be activated.
@@ -139,9 +177,68 @@ type PreserveUserMessages struct {
 	Filter UserMessageFilterFunc
 }
 
+type RetryConfig struct {
+	// MaxRetries specifies the maximum number of retry attempts.
+	// If nil, defaults to 3.
+	// A value of 0 means no retries will be attempted.
+	MaxRetries *int
+
+	// ShouldRetry is a function that determines whether an error should trigger a retry.
+	// If nil, all errors are considered retry-able.
+	ShouldRetry func(ctx context.Context, resp adk.Message, err error) bool
+
+	// BackoffFunc calculates the delay before the next retry attempt.
+	// The attempt parameter starts at 1 for the first retry.
+	// If nil, a default exponential backoff with jitter is used.
+	BackoffFunc func(ctx context.Context, attempt int, resp adk.Message, err error) time.Duration
+}
+
+type FailoverConfig struct {
+	// MaxRetries specifies the maximum number of retry attempts for failover.
+	// If nil, defaults to 3.
+	// A value of 0 means only one failover attempt will be made.
+	MaxRetries *int
+
+	// ShouldFailover determines whether a primary-model error should trigger failover.
+	// If nil, all primary-model errors trigger failover.
+	ShouldFailover func(ctx context.Context, resp adk.Message, err error) bool
+
+	// BackoffFunc calculates the delay before the next failover attempt.
+	// The attempt parameter starts at 1 for the first retry after the initial failover attempt.
+	// If nil, a default exponential backoff with jitter is used.
+	BackoffFunc func(ctx context.Context, attempt int, resp adk.Message, err error) time.Duration
+
+	// GetFailoverModel returns the fallback model and input messages used for failover.
+	GetFailoverModel GetFailoverModelFunc
+}
+
+// FailoverContext contains context information during failover process.
+type FailoverContext struct {
+	// Attempt is the current failover attempt number, starting from 1.
+	Attempt int
+
+	// DefaultSystemInstruction is the default system instruction used to build summarization model input.
+	DefaultSystemInstruction adk.Message
+
+	// UserInstruction is the user instruction used to build summarization model input.
+	UserInstruction adk.Message
+
+	// OriginalMessages is the original complete message list before summarization.
+	OriginalMessages []adk.Message
+
+	// LastModelResponse is the resp returned by the last failed Generate call.
+	LastModelResponse *schema.Message
+
+	// LastErr is the error from the last failed attempt that triggered this failover.
+	//
+	// Note: When RetryConfig is also configured, LastErr wraps the last model error
+	// with an "exceeds max retries" message (if retries were exhausted).
+	LastErr error
+}
+
 // New creates a summarization middleware that automatically summarizes conversation history
 // when trigger conditions are met.
-func New(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
+func New(_ context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 	if err := cfg.check(); err != nil {
 		return nil, err
 	}
@@ -200,16 +297,25 @@ func (m *middleware) BeforeModelRewriteState(ctx context.Context, state *adk.Cha
 		}
 	}
 
-	summary, err := m.summarize(ctx, state.Messages, contextMsgs)
+	summary, failoverModelInputMessages, err := m.summarize(ctx, state.Messages, contextMsgs)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	summary, err = m.postProcessSummary(ctx, contextMsgs, summary)
+	ctx = context.WithValue(ctx, ctxKeyFailoverModelInputMessages{}, failoverModelInputMessages)
+
+	ctx, state, err = m.finalizeSummary(ctx, state, &beforeState, systemMsgs, summary)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	return ctx, state, nil
+}
+
+func (m *middleware) finalizeSummary(ctx context.Context, state *adk.ChatModelAgentState,
+	beforeState *adk.ChatModelAgentState, systemMsgs []adk.Message, summary adk.Message) (context.Context, *adk.ChatModelAgentState, error) {
+
+	var err error
 	if m.cfg.Finalize != nil {
 		state.Messages, err = m.cfg.Finalize(ctx, state.Messages, summary)
 		if err != nil {
@@ -220,7 +326,7 @@ func (m *middleware) BeforeModelRewriteState(ctx context.Context, state *adk.Cha
 	}
 
 	if m.cfg.Callback != nil {
-		err = m.cfg.Callback(ctx, beforeState, *state)
+		err = m.cfg.Callback(ctx, *beforeState, *state)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -253,7 +359,7 @@ func (m *middleware) shouldSummarize(ctx context.Context, input *TokenCounterInp
 }
 
 func (m *middleware) getTriggerContextTokens() int {
-	const defaultTriggerContextTokens = 190000
+	const defaultTriggerContextTokens = 170000
 	if m.cfg.Trigger != nil {
 		return m.cfg.Trigger.ContextTokens
 	}
@@ -286,7 +392,7 @@ func (m *middleware) countTokens(ctx context.Context, input *TokenCounterInput) 
 	return defaultTokenCounter(ctx, input)
 }
 
-func defaultTokenCounter(ctx context.Context, input *TokenCounterInput) (int, error) {
+func defaultTokenCounter(_ context.Context, input *TokenCounterInput) (int, error) {
 	var totalTokens int
 	for _, msg := range input.Messages {
 		text := extractTextContent(msg)
@@ -311,35 +417,112 @@ func estimateTokenCount(text string) int {
 	return (len(text) + 3) / 4
 }
 
-func (m *middleware) summarize(ctx context.Context, originMsgs, contextMsgs []adk.Message) (adk.Message, error) {
-	input, err := m.buildSummarizationModelInput(ctx, originMsgs, contextMsgs)
+const defaultMaxRetries = 3
+
+func (m *middleware) summarize(ctx context.Context, originMsgs, contextMsgs []adk.Message) (adk.Message, []adk.Message, error) {
+	modelInput, err := m.buildSummarizationModelInput(ctx, originMsgs, contextMsgs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	resp, err := m.cfg.Model.Generate(ctx, input, m.cfg.ModelOptions...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate summary: %w", err)
+	resp, err := generateSummaryWithRetry(ctx, m.cfg.Model, modelInput, m.cfg.ModelOptions, m.cfg.Retry)
+	if shouldFailover(ctx, m.cfg.Failover, resp, err) {
+		resp, modelInput, err = m.runFailover(ctx, originMsgs, modelInput, resp, err)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate summary: %w", err)
 	}
 
-	return newSummaryMessage(resp.Content), nil
+	summary, err := m.postProcessSummary(ctx, contextMsgs, newSummaryMessage(resp.Content))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return summary, modelInput, nil
+}
+
+func (m *middleware) runFailover(ctx context.Context, originMsgs, defaultInput []adk.Message, lastResp adk.Message,
+	lastErr error) (adk.Message, []adk.Message, error) {
+
+	sysInstruction, userInstruction := m.getModelInstructions()
+
+	maxRetries := defaultMaxRetries
+	if m.cfg.Failover.MaxRetries != nil {
+		maxRetries = *m.cfg.Failover.MaxRetries
+	}
+
+	backoff := m.cfg.Failover.BackoffFunc
+	if backoff == nil {
+		backoff = defaultBackoffFunc
+	}
+
+	modelInput := defaultInput
+	total := maxRetries + 1
+
+	for attempt := 1; ; attempt++ {
+		fctx := &FailoverContext{
+			Attempt:                  attempt,
+			DefaultSystemInstruction: sysInstruction,
+			UserInstruction:          userInstruction,
+			OriginalMessages:         originMsgs,
+			LastModelResponse:        lastResp,
+			LastErr:                  lastErr,
+		}
+
+		failoverModel, nextInput, failoverErr := m.getFailoverModel(ctx, fctx, defaultInput)
+		if failoverErr != nil {
+			lastResp = nil
+			lastErr = failoverErr
+		} else {
+			modelInput = nextInput
+			lastResp, lastErr = generateSummaryWithRetry(ctx, failoverModel, modelInput, m.cfg.ModelOptions, nil)
+		}
+
+		if !shouldFailover(ctx, m.cfg.Failover, lastResp, lastErr) {
+			return lastResp, modelInput, lastErr
+		}
+		if attempt == total {
+			if lastErr != nil {
+				return nil, nil, fmt.Errorf("exceeds max failover attempts: %w", lastErr)
+			}
+			return nil, nil, fmt.Errorf("exceeds max failover attempts")
+		}
+
+		select {
+		case <-time.After(backoff(ctx, attempt, lastResp, lastErr)):
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
+}
+
+func (m *middleware) getFailoverModel(ctx context.Context, failoverCtx *FailoverContext, defaultInput []adk.Message) (model.BaseChatModel, []adk.Message, error) {
+	if m.cfg.Failover == nil {
+		return nil, nil, fmt.Errorf("failover config is required")
+	}
+	if m.cfg.Failover.GetFailoverModel == nil {
+		return m.cfg.Model, defaultInput, nil
+	}
+
+	failoverModel, nextModelInput, err := m.cfg.Failover.GetFailoverModel(ctx, failoverCtx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get failover model: %w", err)
+	}
+
+	if failoverModel == nil {
+		return nil, nil, fmt.Errorf("failover model is required")
+	}
+	if len(nextModelInput) == 0 {
+		return nil, nil, fmt.Errorf("failover model input messages are required")
+	}
+
+	return failoverModel, nextModelInput, nil
 }
 
 func (m *middleware) buildSummarizationModelInput(ctx context.Context, originMsgs, contextMsgs []adk.Message) ([]adk.Message, error) {
-	userInstruction := m.cfg.UserInstruction
-	if userInstruction == "" {
-		userInstruction = getUserSummaryInstruction()
-	}
-
-	userInstructionMsg := &schema.Message{
-		Role:    schema.User,
-		Content: userInstruction,
-	}
-
-	sysInstructionMsg := &schema.Message{
-		Role:    schema.System,
-		Content: getSystemInstruction(),
-	}
+	sysInstructionMsg, userInstructionMsg := m.getModelInstructions()
 
 	if m.cfg.GenModelInput != nil {
 		input, err := m.cfg.GenModelInput(ctx, sysInstructionMsg, userInstructionMsg, originMsgs)
@@ -355,6 +538,25 @@ func (m *middleware) buildSummarizationModelInput(ctx context.Context, originMsg
 	input = append(input, userInstructionMsg)
 
 	return input, nil
+}
+
+func (m *middleware) getModelInstructions() (adk.Message, adk.Message) {
+	userInstruction := m.cfg.UserInstruction
+	if userInstruction == "" {
+		userInstruction = getUserSummaryInstruction()
+	}
+
+	userInstructionMsg := &schema.Message{
+		Role:    schema.User,
+		Content: userInstruction,
+	}
+
+	sysInstructionMsg := &schema.Message{
+		Role:    schema.System,
+		Content: getSystemInstruction(),
+	}
+
+	return sysInstructionMsg, userInstructionMsg
 }
 
 func newSummaryMessage(content string) *schema.Message {
@@ -382,17 +584,17 @@ func (m *middleware) postProcessSummary(ctx context.Context, messages []adk.Mess
 
 	summary.Content = appendSection(getSummaryPreamble(), summary.Content)
 
-	summary.UserInputMultiContent = []schema.MessageInputPart{
-		{
-			Type: schema.ChatMessagePartTypeText,
-			Text: summary.Content,
-		},
-		{
-			Type: schema.ChatMessagePartTypeText,
-			Text: getContinueInstruction(),
-		},
-	}
+	var inputParts []schema.MessageInputPart
 
+	inputParts = append(inputParts, schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeText,
+		Text: summary.Content,
+	}, schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeText,
+		Text: getContinueInstruction(),
+	})
+
+	summary.UserInputMultiContent = inputParts
 	summary.Content = ""
 
 	return summary, nil
@@ -554,9 +756,6 @@ func extractTextContent(msg adk.Message) string {
 	if msg == nil {
 		return ""
 	}
-	if msg.Content != "" {
-		return msg.Content
-	}
 
 	var sb strings.Builder
 	for _, part := range msg.UserInputMultiContent {
@@ -568,7 +767,11 @@ func extractTextContent(msg adk.Message) string {
 		}
 	}
 
-	return sb.String()
+	if sb.Len() > 0 {
+		return sb.String()
+	}
+
+	return msg.Content
 }
 
 func (c *Config) check() error {
@@ -583,19 +786,42 @@ func (c *Config) check() error {
 			return err
 		}
 	}
+	if c.Retry != nil {
+		if err := c.Retry.check(); err != nil {
+			return err
+		}
+	}
+	if c.Failover != nil {
+		if err := c.Failover.check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
+func (c *RetryConfig) check() error {
+	if c.MaxRetries != nil && *c.MaxRetries < 0 {
+		return fmt.Errorf("retry.MaxRetries must be non-negative")
+	}
+	return nil
+}
+
+func (c *FailoverConfig) check() error {
+	if c.MaxRetries != nil && *c.MaxRetries < 0 {
+		return fmt.Errorf("failover.MaxRetries must be non-negative")
+	}
 	return nil
 }
 
 func (c *TriggerCondition) check() error {
 	if c.ContextTokens < 0 {
-		return fmt.Errorf("trigger.ContextTokens must be non-negative")
+		return fmt.Errorf("contextTokens must be non-negative")
 	}
 	if c.ContextMessages < 0 {
-		return fmt.Errorf("trigger.ContextMessages must be non-negative")
+		return fmt.Errorf("contextMessages must be non-negative")
 	}
 	if c.ContextTokens == 0 && c.ContextMessages == 0 {
-		return fmt.Errorf("at least one of trigger.ContextTokens or trigger.ContextMessages must be non-negative")
+		return fmt.Errorf("at least one of contextTokens or contextMessages must be non-negative")
 	}
 	return nil
 }
@@ -629,4 +855,94 @@ func getExtra[T any](msg adk.Message, key string) (T, bool) {
 		return zero, false
 	}
 	return v, true
+}
+
+func shouldFailover(ctx context.Context, cfg *FailoverConfig, resp adk.Message, err error) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.ShouldFailover == nil {
+		return err != nil
+	}
+	return cfg.ShouldFailover(ctx, resp, err)
+}
+
+func generateSummaryWithRetry(ctx context.Context, chatModel model.BaseChatModel, input []adk.Message,
+	opts []model.Option, retryCfg *RetryConfig) (adk.Message, error) {
+	if retryCfg == nil {
+		resp, err := chatModel.Generate(ctx, input, opts...)
+		if err != nil {
+			return resp, err
+		}
+		return resp, nil
+	}
+
+	shouldRetry := retryCfg.ShouldRetry
+	if shouldRetry == nil {
+		shouldRetry = defaultShouldRetry
+	}
+	backoffFunc := retryCfg.BackoffFunc
+	if backoffFunc == nil {
+		backoffFunc = defaultBackoffFunc
+	}
+
+	maxRetries := defaultMaxRetries
+	if retryCfg.MaxRetries != nil {
+		maxRetries = *retryCfg.MaxRetries
+	}
+
+	var (
+		lastModelResp adk.Message
+		lastErr       error
+	)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err := chatModel.Generate(ctx, input, opts...)
+		if err == nil {
+			return resp, nil
+		}
+		if !shouldRetry(ctx, resp, err) {
+			return resp, err
+		}
+
+		lastModelResp = resp
+		lastErr = err
+		if attempt < maxRetries {
+			select {
+			case <-time.After(backoffFunc(ctx, attempt+1, resp, err)):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
+	if maxRetries > 0 {
+		return lastModelResp, fmt.Errorf("exceeds max retries: %w", lastErr)
+	}
+
+	return lastModelResp, lastErr
+}
+
+func defaultShouldRetry(_ context.Context, _ adk.Message, err error) bool {
+	return err != nil
+}
+
+func defaultBackoffFunc(_ context.Context, attempt int, _ adk.Message, _ error) time.Duration {
+	baseDelay := time.Second
+	maxDelay := 10 * time.Second
+
+	if attempt <= 0 {
+		return baseDelay
+	}
+
+	if attempt > 7 {
+		return maxDelay + time.Duration(rand.Int63n(int64(maxDelay/2)))
+	}
+
+	delay := baseDelay * time.Duration(1<<uint(attempt-1))
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+	return delay + jitter
 }

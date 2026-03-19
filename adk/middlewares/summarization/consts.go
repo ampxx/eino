@@ -16,6 +16,13 @@
 
 package summarization
 
+type ActionType string
+
+const (
+	ActionTypeBeforeSummarize ActionType = "before_summarize"
+	ActionTypeAfterSummarize  ActionType = "after_summarize"
+)
+
 const (
 	extraKeyContentType = "_eino_summarization_content_type"
 )
@@ -26,9 +33,4 @@ const (
 	contentTypeSummary summarizationContentType = "summary"
 )
 
-type ActionType string
-
-const (
-	ActionTypeBeforeSummarize ActionType = "before_summarize"
-	ActionTypeAfterSummarize  ActionType = "after_summarize"
-)
+type ctxKeyFailoverModelInputMessages struct{}

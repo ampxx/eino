@@ -22,6 +22,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"io"
+	"sync/atomic"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
@@ -262,6 +263,8 @@ type typedReactConfig[M MessageType] struct {
 	maxIterations int
 
 	cancelCtx *cancelContext
+
+	eagerExecution bool
 }
 
 type reactConfig = typedReactConfig[*schema.Message]
@@ -329,15 +332,41 @@ func newReact(ctx context.Context, config *reactConfig) (reactGraph, error) {
 	}), compose.WithNodeName(initNode_))
 
 	var wrappedModel model.BaseChatModel = config.model
-	if config.modelWrapperConf != nil {
-		wrappedModel = buildModelWrappers(config.model, config.modelWrapperConf)
-	}
 
 	toolsConfig := config.toolsConfig
+
+	var eagerCoordPtr *atomic.Pointer[eagerCoord]
+	if config.eagerExecution {
+		eagerCoordPtr = &atomic.Pointer[eagerCoord]{}
+		config.toolsConfig.ToolExecutionProvider = func(ctx context.Context, input *schema.Message) (
+			map[string]string, map[string]*schema.ToolResult, []string, error,
+		) {
+			coord := eagerCoordPtr.Load()
+			if coord == nil {
+				return nil, nil, nil, nil
+			}
+			coord.waitDone(ctx)
+			return coord.collectResults()
+		}
+	}
 
 	toolsNode, err := compose.NewToolNode(ctx, toolsConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.eagerExecution {
+		eagerExec := &eagerToolExecutorMiddleware[Message]{
+			toolsNode:           toolsNode,
+			toolNodeKey:         toolNode_,
+			coordPtr:            eagerCoordPtr,
+			executeSequentially: config.toolsConfig.ExecuteSequentially,
+		}
+		config.modelWrapperConf.eagerToolExec = eagerExec
+	}
+
+	if config.modelWrapperConf != nil {
+		wrappedModel = buildModelWrappers(config.model, config.modelWrapperConf)
 	}
 
 	_ = g.AddChatModelNode(chatModel_, wrappedModel, compose.WithStatePreHandler(
@@ -575,13 +604,43 @@ func newAgenticReact(ctx context.Context, config *agenticReactConfig) (agenticRe
 	}), compose.WithNodeName(initNode_))
 
 	var wrappedModel model.AgenticModel = config.model
-	if config.modelWrapperConf != nil {
-		wrappedModel = buildModelWrappers(config.model, config.modelWrapperConf)
+
+	var eagerCoordPtr *atomic.Pointer[eagerCoord]
+	if config.eagerExecution {
+		eagerCoordPtr = &atomic.Pointer[eagerCoord]{}
+		config.toolsConfig.ToolExecutionProvider = func(ctx context.Context, input *schema.Message) (
+			map[string]string, map[string]*schema.ToolResult, []string, error,
+		) {
+			coord := eagerCoordPtr.Load()
+			if coord == nil {
+				return nil, nil, nil, nil
+			}
+			coord.waitDone(ctx)
+			return coord.collectResults()
+		}
 	}
 
 	toolsNode, err := compose.NewAgenticToolsNode(ctx, config.toolsConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.eagerExecution {
+		eagerToolsNode, eagerErr := compose.NewToolNode(ctx, config.toolsConfig)
+		if eagerErr != nil {
+			return nil, eagerErr
+		}
+		eagerExec := &eagerToolExecutorMiddleware[*schema.AgenticMessage]{
+			toolsNode:           eagerToolsNode,
+			toolNodeKey:         toolNode_,
+			coordPtr:            eagerCoordPtr,
+			executeSequentially: config.toolsConfig.ExecuteSequentially,
+		}
+		config.modelWrapperConf.eagerToolExec = eagerExec
+	}
+
+	if config.modelWrapperConf != nil {
+		wrappedModel = buildModelWrappers(config.model, config.modelWrapperConf)
 	}
 
 	_ = g.AddAgenticModelNode(chatModel_, wrappedModel, compose.WithStatePreHandler(

@@ -69,6 +69,7 @@ type ToolsNode struct {
 	streamToolCallMiddlewares         []StreamableToolMiddleware
 	enhancedToolCallMiddlewares       []EnhancedInvokableToolMiddleware
 	enhancedStreamToolCallMiddlewares []EnhancedStreamableToolMiddleware
+	toolExecutionProvider             func(ctx context.Context, input *schema.Message) (map[string]string, map[string]*schema.ToolResult, []string, error)
 }
 
 // ToolInput represents the input parameters for a tool call execution.
@@ -189,6 +190,13 @@ type ToolsNodeConfig struct {
 	// Invokable middleware only applies to tools implementing InvokableTool interface.
 	// Streamable middleware only applies to tools implementing StreamableTool interface.
 	ToolCallMiddlewares []ToolMiddleware
+
+	// ToolExecutionProvider, when set, supplies pre-executed tool results to the ToolsNode.
+	// The ToolsNode will call this function before executing tools itself. Any tool call IDs
+	// present in the returned maps are treated as already executed and will not be re-invoked.
+	// Tool call IDs listed in failedToolCallIDs are re-executed by the ToolsNode.
+	// This is used internally by the eager tool execution middleware.
+	ToolExecutionProvider func(ctx context.Context, input *schema.Message) (executedTools map[string]string, executedEnhancedTools map[string]*schema.ToolResult, failedToolCallIDs []string, err error)
 }
 
 // NewToolNode creates a new ToolsNode.
@@ -233,6 +241,7 @@ func NewToolNode(ctx context.Context, conf *ToolsNodeConfig) (*ToolsNode, error)
 		streamToolCallMiddlewares:         streamMiddlewares,
 		enhancedToolCallMiddlewares:       enhancedInvokableMiddlewares,
 		enhancedStreamToolCallMiddlewares: enhancedStreamableMiddlewares,
+		toolExecutionProvider:             conf.ToolExecutionProvider,
 	}, nil
 }
 
@@ -807,6 +816,13 @@ func (tn *ToolsNode) Invoke(ctx context.Context, input *schema.Message,
 		if tnState.ExecutedEnhancedTools != nil {
 			executedEnhancedTools = tnState.ExecutedEnhancedTools
 		}
+	} else if tn.toolExecutionProvider != nil {
+		eagerExecuted, eagerEnhanced, _, providerErr := tn.toolExecutionProvider(ctx, input)
+		if providerErr != nil {
+			return nil, providerErr
+		}
+		executedTools = eagerExecuted
+		executedEnhancedTools = eagerEnhanced
 	}
 
 	tasks, err := tn.genToolCallTasks(ctx, tuple, input, executedTools, executedEnhancedTools, false)
@@ -909,6 +925,13 @@ func (tn *ToolsNode) Stream(ctx context.Context, input *schema.Message,
 		if tnState.ExecutedEnhancedTools != nil {
 			executedEnhancedTools = tnState.ExecutedEnhancedTools
 		}
+	} else if tn.toolExecutionProvider != nil {
+		eagerExecuted, eagerEnhanced, _, providerErr := tn.toolExecutionProvider(ctx, input)
+		if providerErr != nil {
+			return nil, providerErr
+		}
+		executedTools = eagerExecuted
+		executedEnhancedTools = eagerEnhanced
 	}
 
 	tasks, err := tn.genToolCallTasks(ctx, tuple, input, executedTools, executedEnhancedTools, true)
@@ -1014,6 +1037,49 @@ func (tn *ToolsNode) Stream(ctx context.Context, input *schema.Message,
 // GetType returns the component type string for the Tools node.
 func (tn *ToolsNode) GetType() string {
 	return ""
+}
+
+// SingleToolCallResult holds the result of executing a single tool call
+// via InvokeSingleToolCall. It carries both the plain string output and the
+// enhanced ToolResult, with UseEnhanced indicating which form to use.
+type SingleToolCallResult struct {
+	Output         string
+	EnhancedOutput *schema.ToolResult
+	UseEnhanced    bool
+}
+
+// InvokeSingleToolCall executes a single tool call through the ToolsNode's full
+// pipeline, including ToolArgumentsHandler, UnknownToolHandler, ToolCallMiddlewares,
+// callbacks, and address segment appending. It returns the result or an error.
+// This is used by the eager tool executor to invoke individual tools while
+// honoring all ToolsNodeConfig settings.
+func (tn *ToolsNode) InvokeSingleToolCall(ctx context.Context, tc schema.ToolCall, opts ...tool.Option) (*SingleToolCallResult, error) {
+	syntheticMsg := &schema.Message{
+		Role:      schema.Assistant,
+		ToolCalls: []schema.ToolCall{tc},
+	}
+
+	tasks, err := tn.genToolCallTasks(ctx, tn.tuple, syntheticMsg, nil, nil, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tasks) == 0 {
+		return &SingleToolCallResult{}, nil
+	}
+
+	task := &tasks[0]
+	runToolCallTaskByInvoke(ctx, task, opts...)
+
+	if task.err != nil {
+		return nil, task.err
+	}
+
+	return &SingleToolCallResult{
+		Output:         task.output,
+		EnhancedOutput: task.enhancedOutput,
+		UseEnhanced:    task.useEnhanced,
+	}, nil
 }
 
 func getToolsNodeOptions(opts ...ToolsNodeOption) *toolsNodeOptions {

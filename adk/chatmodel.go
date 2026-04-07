@@ -639,8 +639,7 @@ type execContext struct {
 	toolInfos      []*schema.ToolInfo
 	unwrappedTools []tool.BaseTool
 
-	rebuildGraph bool // whether needs to instantiate a new graph because of topology changes due to tool modifications
-	toolUpdated  bool // whether needs to pass a compose.WithToolList option to ToolsNode due to tool list change
+	toolUpdated bool // whether needs to pass a compose.WithToolList option to ToolsNode due to tool list change
 }
 
 func (a *ChatModelAgent) applyBeforeAgent(ctx context.Context, ec *execContext) (context.Context, *execContext, error) {
@@ -666,7 +665,6 @@ func (a *ChatModelAgent) applyBeforeAgent(ctx context.Context, ec *execContext) 
 		},
 		returnDirectly: runCtx.ReturnDirectly,
 		toolUpdated:    true,
-		rebuildGraph:   len(ec.returnDirectly) == 0 && len(runCtx.ReturnDirectly) > 0,
 	}
 
 	toolInfos, err := genToolInfos(ctx, &runtimeEC.toolsNodeConf)
@@ -959,17 +957,7 @@ func (a *ChatModelAgent) getRunFunc(ctx context.Context) (context.Context, runFu
 		return ctx, nil, nil, err
 	}
 
-	if !runtimeBC.rebuildGraph {
-		return ctx, defaultRun, runtimeBC, nil
-	}
-
-	var tempRun runFunc
-	tempRun, err = a.buildReActRunFunc(ctx, runtimeBC)
-	if err != nil {
-		return ctx, nil, nil, err
-	}
-
-	return ctx, tempRun, runtimeBC, nil
+	return ctx, defaultRun, runtimeBC, nil
 }
 
 func (a *ChatModelAgent) Run(ctx context.Context, input *AgentInput, opts ...AgentRunOption) *AsyncIterator[*AgentEvent] {

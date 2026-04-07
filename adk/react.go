@@ -435,43 +435,39 @@ func newReact(ctx context.Context, config *reactConfig) (reactGraph, error) {
 	_ = g.AddEdge(toolNode_, afterToolCallsNode_)
 	_ = g.AddEdge(afterToolCallsNode_, afterToolCallsCancelCheckNode_)
 
-	if len(config.toolsReturnDirectly) > 0 {
-		const (
-			toolNodeToEndConverter = "ToolNodeToEndConverter"
-		)
+	const (
+		toolNodeToEndConverter = "ToolNodeToEndConverter"
+	)
 
-		cvt := func(ctx context.Context, toolResults []Message) (Message, error) {
-			id, _ := getReturnDirectlyToolCallID(ctx)
+	cvt := func(ctx context.Context, toolResults []Message) (Message, error) {
+		id, _ := getReturnDirectlyToolCallID(ctx)
 
-			for _, msg := range toolResults {
-				if msg != nil && msg.ToolCallID == id {
-					return msg, nil
-				}
+		for _, msg := range toolResults {
+			if msg != nil && msg.ToolCallID == id {
+				return msg, nil
 			}
-
-			return nil, errors.New("return directly tool call result not found")
 		}
 
-		_ = g.AddLambdaNode(toolNodeToEndConverter, compose.InvokableLambda(cvt),
-			compose.WithNodeName(toolNodeToEndConverter))
-		_ = g.AddEdge(toolNodeToEndConverter, compose.END)
-
-		checkReturnDirect := func(ctx context.Context, toolResults []Message) (string, error) {
-			_, ok := getReturnDirectlyToolCallID(ctx)
-
-			if ok {
-				return toolNodeToEndConverter, nil
-			}
-
-			return chatModel_, nil
-		}
-
-		returnDirectBranch := compose.NewGraphBranch(checkReturnDirect,
-			map[string]bool{toolNodeToEndConverter: true, chatModel_: true})
-		_ = g.AddBranch(afterToolCallsCancelCheckNode_, returnDirectBranch)
-	} else {
-		_ = g.AddEdge(afterToolCallsCancelCheckNode_, chatModel_)
+		return nil, errors.New("return directly tool call result not found")
 	}
+
+	_ = g.AddLambdaNode(toolNodeToEndConverter, compose.InvokableLambda(cvt),
+		compose.WithNodeName(toolNodeToEndConverter))
+	_ = g.AddEdge(toolNodeToEndConverter, compose.END)
+
+	checkReturnDirect := func(ctx context.Context, toolResults []Message) (string, error) {
+		_, ok := getReturnDirectlyToolCallID(ctx)
+
+		if ok {
+			return toolNodeToEndConverter, nil
+		}
+
+		return chatModel_, nil
+	}
+
+	returnDirectBranch := compose.NewGraphBranch(checkReturnDirect,
+		map[string]bool{toolNodeToEndConverter: true, chatModel_: true})
+	_ = g.AddBranch(afterToolCallsCancelCheckNode_, returnDirectBranch)
 
 	return g, nil
 }

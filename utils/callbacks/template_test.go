@@ -693,7 +693,7 @@ func TestAgenticCallbackHandler(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic}
 
 		assert.True(t, handler.Needed(ctx, info, callbacks.TimingOnStart))
 		assert.False(t, handler.Needed(ctx, info, callbacks.TimingOnEnd))
@@ -707,7 +707,7 @@ func TestAgenticCallbackHandler(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic}
 
 		assert.False(t, handler.Needed(ctx, info, callbacks.TimingOnStart))
 		assert.True(t, handler.Needed(ctx, info, callbacks.TimingOnEnd))
@@ -717,7 +717,7 @@ func TestAgenticCallbackHandler(t *testing.T) {
 		handler := &AgenticCallbackHandler{}
 
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic}
 
 		assert.False(t, handler.Needed(ctx, info, callbacks.TimingOnStart))
 		assert.False(t, handler.Needed(ctx, info, callbacks.TimingOnEnd))
@@ -741,7 +741,7 @@ func TestHandlerHelperWithAgenticAgent(t *testing.T) {
 
 		handler := tpl.Handler()
 		ctx := context.Background()
-		ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent}, handler)
+		ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{Component: adk.ComponentOfAgentic}, handler)
 
 		ctx = callbacks.OnStart[any](ctx, nil)
 		assert.Equal(t, 1, cnt)
@@ -764,7 +764,7 @@ func TestHandlerTemplateWithAgenticAgentComponent(t *testing.T) {
 
 		handler := tpl.Handler()
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent, Name: "TestAgenticAgent"}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic, Name: "TestAgenticAgent"}
 
 		handler.OnStart(ctx, info, &adk.AgenticCallbackInput{})
 		assert.True(t, called)
@@ -782,7 +782,7 @@ func TestHandlerTemplateWithAgenticAgentComponent(t *testing.T) {
 
 		handler := tpl.Handler()
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent, Name: "TestAgenticAgent"}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic, Name: "TestAgenticAgent"}
 
 		handler.OnEnd(ctx, info, &adk.AgenticCallbackOutput{})
 		assert.True(t, called)
@@ -798,7 +798,7 @@ func TestHandlerTemplateWithAgenticAgentComponent(t *testing.T) {
 
 		handler := tpl.Handler()
 		ctx := context.Background()
-		info := &callbacks.RunInfo{Component: adk.ComponentOfAgenticAgent}
+		info := &callbacks.RunInfo{Component: adk.ComponentOfAgentic}
 
 		checker, ok := handler.(callbacks.TimingChecker)
 		assert.True(t, ok, "handler should implement TimingChecker")

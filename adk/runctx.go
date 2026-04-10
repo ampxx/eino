@@ -39,7 +39,12 @@ type runSession struct {
 	LaneEvents *laneEvents
 	mtx        sync.Mutex
 
-	TypedEvents     any
+	// TypedEvents stores *[]*typedAgentEventWrapper[M] for M != *schema.Message.
+	// For M = *schema.Message, the existing Events field is used instead.
+	// The any type is required because Go does not support generic fields in non-generic structs.
+	TypedEvents any
+	// TypedLaneEvents stores *typedLaneEventsOf[M] for M != *schema.Message.
+	// Mirrors LaneEvents for the typed code path. See TypedEvents for rationale.
 	TypedLaneEvents any
 }
 

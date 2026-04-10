@@ -78,6 +78,10 @@ func init() {
 	schema.RegisterName[*typedState[*schema.AgenticMessage]]("_eino_adk_agentic_state")
 	schema.RegisterName[*TypedAgentEvent[*schema.AgenticMessage]]("_eino_adk_agentic_event")
 
+	// Gob registrations for checkpoint serialization: interrupt/resume requires all
+	// concrete types reachable from the checkpoint state graph to be registered with
+	// encoding/gob. Without these, gob.Encode/Decode will fail when persisting or
+	// restoring agent state across process boundaries.
 	gob.Register(&AgentEvent{})
 	gob.Register(int(0))
 	gob.Register(&AgentInput{})

@@ -64,7 +64,7 @@ func newAgenticRecordingHandler(recorder *agenticCallbackRecorder) callbacks.Han
 	recorder.eventsDone = make(chan struct{})
 	return callbacks.NewHandlerBuilder().
 		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
-			if info.Component != ComponentOfAgenticAgent {
+			if info.Component != ComponentOfAgentic {
 				return ctx
 			}
 			recorder.mu.Lock()
@@ -77,7 +77,7 @@ func newAgenticRecordingHandler(recorder *agenticCallbackRecorder) callbacks.Han
 			return ctx
 		}).
 		OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
-			if info.Component != ComponentOfAgenticAgent {
+			if info.Component != ComponentOfAgentic {
 				return ctx
 			}
 			recorder.mu.Lock()
@@ -213,7 +213,7 @@ func TestAgenticCallbackRunInfo(t *testing.T) {
 
 	assert.NotNil(t, recorder.runInfo)
 	assert.Equal(t, "TestChatAgent", recorder.runInfo.Name)
-	assert.Equal(t, ComponentOfAgenticAgent, recorder.runInfo.Component)
+	assert.Equal(t, ComponentOfAgentic, recorder.runInfo.Component)
 }
 
 func TestAgenticCallbackMultipleHandlers(t *testing.T) {
@@ -350,7 +350,7 @@ func TestAgenticCallbackWithSequentialWorkflow(t *testing.T) {
 	var callbackInfos []*callbacks.RunInfo
 	handler := callbacks.NewHandlerBuilder().
 		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
-			if info.Component == ComponentOfAgenticAgent {
+			if info.Component == ComponentOfAgentic {
 				callbackInfos = append(callbackInfos, info)
 			}
 			return ctx
@@ -420,7 +420,7 @@ func TestCoverage_FlowAgent_RunWithCallbacksAndSubAgents(t *testing.T) {
 	var onStartCalled, onEndCalled bool
 	handler := callbacks.NewHandlerBuilder().
 		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
-			if info.Component != ComponentOfAgenticAgent {
+			if info.Component != ComponentOfAgentic {
 				return ctx
 			}
 			onStartCalled = true
@@ -430,7 +430,7 @@ func TestCoverage_FlowAgent_RunWithCallbacksAndSubAgents(t *testing.T) {
 			return ctx
 		}).
 		OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
-			if info.Component != ComponentOfAgenticAgent {
+			if info.Component != ComponentOfAgentic {
 				return ctx
 			}
 			onEndCalled = true
@@ -469,7 +469,7 @@ func TestCoverage_WrapAgenticIterWithOnEnd(t *testing.T) {
 			return ctx
 		}).
 		OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
-			if info.Component == ComponentOfAgenticAgent {
+			if info.Component == ComponentOfAgentic {
 				onEndCalled = true
 			}
 			return ctx

@@ -32,17 +32,31 @@ import (
 // Use this to filter callback events to only agent-related events.
 const ComponentOfAgent components.Component = "Agent"
 
-// ComponentOfAgenticAgent is the component type identifier for ADK agents
+// ComponentOfAgentic is the component type identifier for ADK agents
 // that use *schema.AgenticMessage in callbacks.
-const ComponentOfAgenticAgent components.Component = "AgenticAgent"
+const ComponentOfAgentic components.Component = "AgenticAgent"
 
-// MessageType is the type constraint for message types used in ADK.
+// Deprecated: Use ComponentOfAgentic.
+const ComponentOfAgenticAgent = ComponentOfAgentic
+
+// MessageType is the sealed type constraint for message types used in ADK.
+// Only *schema.Message and *schema.AgenticMessage satisfy this constraint.
+// External packages cannot add new types to this union; all generic functions
+// in ADK use exhaustive type switches on these two types.
 type MessageType interface {
 	*schema.Message | *schema.AgenticMessage
 }
 
 type Message = *schema.Message
 type MessageStream = *schema.StreamReader[Message]
+
+// isNilMessage checks whether a generic message value is nil.
+// Direct `msg == nil` does not compile for generic pointer types in Go;
+// the canonical workaround is to compare through the `any` interface.
+func isNilMessage[M MessageType](msg M) bool {
+	var zero M
+	return any(msg) == any(zero)
+}
 
 type TypedMessageVariant[M MessageType] struct {
 	IsStreaming bool

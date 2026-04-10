@@ -343,6 +343,10 @@ func typedDeepCopyAgentInput[M MessageType](ai *TypedAgentInput[M]) *TypedAgentI
 	return copied
 }
 
+// isToolResultEvent checks whether an event contains a tool result message.
+// NOTE: This function embeds schema-level knowledge (ContentBlockTypeFunctionToolResult)
+// for AgenticMessage inspection. If AgenticMessage evolves new content block types that
+// represent tool results, this function must be updated accordingly.
 func isToolResultEvent[M MessageType](event *typedAgentEventWrapper[M]) bool {
 	var zero M
 	switch any(zero).(type) {
@@ -417,7 +421,7 @@ func (a *typedFlowAgent[M]) genAgentInput(ctx context.Context, runCtx *runContex
 			return nil, err
 		}
 
-		if any(msg) == any(zero) {
+		if isNilMessage(msg) {
 			continue
 		}
 
@@ -449,8 +453,7 @@ func buildTypedDefaultHistoryRewriter[M MessageType](agentName string) typedHist
 				}
 			}
 
-			var zero M
-			if any(msg) != any(zero) {
+			if !isNilMessage(msg) {
 				messages = append(messages, msg)
 			}
 		}

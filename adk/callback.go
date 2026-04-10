@@ -138,13 +138,19 @@ func getAgentType(agent Agent) string {
 // AgenticCallbackInput represents the input passed to agentic agent callbacks during OnStart.
 // Use ConvAgenticCallbackInput to safely convert from callbacks.CallbackInput.
 type AgenticCallbackInput struct {
-	Input      *TypedAgentInput[*schema.AgenticMessage]
+	// Input contains the agent input for a new run. Nil when resuming.
+	Input *TypedAgentInput[*schema.AgenticMessage]
+	// ResumeInfo contains resume information when resuming from an interrupt. Nil for new runs.
 	ResumeInfo *ResumeInfo
 }
 
 // AgenticCallbackOutput represents the output passed to agentic agent callbacks during OnEnd.
 // Use ConvAgenticCallbackOutput to safely convert from callbacks.CallbackOutput.
+//
+// Important: The Events iterator should be consumed asynchronously to avoid blocking
+// the agent execution. Each callback handler receives an independent copy of the iterator.
 type AgenticCallbackOutput struct {
+	// Events provides a stream of agentic agent events. Each handler receives its own copy.
 	Events *AsyncIterator[*TypedAgentEvent[*schema.AgenticMessage]]
 }
 
@@ -222,7 +228,7 @@ func initAgenticCallbacks(ctx context.Context, agentName, agentType string, opts
 	ri := &callbacks.RunInfo{
 		Name:      agentName,
 		Type:      agentType,
-		Component: ComponentOfAgenticAgent,
+		Component: ComponentOfAgentic,
 	}
 
 	o := getCommonOptions(nil, opts...)

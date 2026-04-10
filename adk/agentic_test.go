@@ -851,7 +851,7 @@ func TestAgenticTransferToAgent(t *testing.T) {
 		},
 	}
 
-	flowAgent, err := TypedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](parentAgent), []TypedAgent[*schema.AgenticMessage]{childAgent})
+	flowAgent, err := typedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](parentAgent), []TypedAgent[*schema.AgenticMessage]{childAgent})
 	assert.NoError(t, err)
 	assert.NotNil(t, flowAgent)
 
@@ -931,7 +931,7 @@ func TestAgenticTransferToAgentWithDesignatedCallback(t *testing.T) {
 		},
 	}
 
-	flowAgent, err := TypedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](parentAgent), []TypedAgent[*schema.AgenticMessage]{childAgent})
+	flowAgent, err := typedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](parentAgent), []TypedAgent[*schema.AgenticMessage]{childAgent})
 	assert.NoError(t, err)
 
 	handler := callbacks.NewHandlerBuilder().OnStartFn(
@@ -1010,7 +1010,7 @@ func TestAgenticSequentialAgent(t *testing.T) {
 		},
 	}
 
-	sequentialAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	sequentialAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:        "SequentialTestAgent",
 		Description: "Test sequential agent",
 		SubAgents:   []TypedAgent[*schema.AgenticMessage]{agent1, agent2},
@@ -1082,7 +1082,7 @@ func TestAgenticSequentialAgentWithExit(t *testing.T) {
 		},
 	}
 
-	sequentialAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	sequentialAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:        "SequentialTestAgent",
 		Description: "Test sequential agent",
 		SubAgents:   []TypedAgent[*schema.AgenticMessage]{agent1, agent2},
@@ -1143,7 +1143,7 @@ func TestAgenticParallelAgent(t *testing.T) {
 		},
 	}
 
-	parallelAgent, err := NewTypedParallelAgent[*schema.AgenticMessage](ctx, &TypedParallelAgentConfig[*schema.AgenticMessage]{
+	parallelAgent, err := newTypedParallelAgent[*schema.AgenticMessage](ctx, &typedParallelAgentConfig[*schema.AgenticMessage]{
 		Name:        "ParallelTestAgent",
 		Description: "Test parallel agent",
 		SubAgents:   []TypedAgent[*schema.AgenticMessage]{agent1, agent2},
@@ -1208,7 +1208,7 @@ func TestAgenticLoopAgent(t *testing.T) {
 		},
 	}
 
-	loopAgent, err := NewTypedLoopAgent[*schema.AgenticMessage](ctx, &TypedLoopAgentConfig[*schema.AgenticMessage]{
+	loopAgent, err := newTypedLoopAgent[*schema.AgenticMessage](ctx, &typedLoopAgentConfig[*schema.AgenticMessage]{
 		Name:          "LoopTestAgent",
 		Description:   "Test loop agent",
 		SubAgents:     []TypedAgent[*schema.AgenticMessage]{agent},
@@ -1268,7 +1268,7 @@ func TestAgenticLoopAgentWithBreakLoop(t *testing.T) {
 		},
 	}
 
-	loopAgent, err := NewTypedLoopAgent[*schema.AgenticMessage](ctx, &TypedLoopAgentConfig[*schema.AgenticMessage]{
+	loopAgent, err := newTypedLoopAgent[*schema.AgenticMessage](ctx, &typedLoopAgentConfig[*schema.AgenticMessage]{
 		Name:          "LoopTestAgent",
 		Description:   "Test loop agent",
 		SubAgents:     []TypedAgent[*schema.AgenticMessage]{agent},
@@ -1426,7 +1426,7 @@ func TestAgenticMultiAgentInterrupt(t *testing.T) {
 			return iter
 		},
 	}
-	a, err := TypedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](sa1), []TypedAgent[*schema.AgenticMessage]{sa2})
+	a, err := typedSetSubAgents[*schema.AgenticMessage](ctx, TypedAgent[*schema.AgenticMessage](sa1), []TypedAgent[*schema.AgenticMessage]{sa2})
 	assert.NoError(t, err)
 	runner := NewTypedRunner[*schema.AgenticMessage](TypedRunnerConfig[*schema.AgenticMessage]{
 		Agent:           a,
@@ -1533,7 +1533,7 @@ func TestCascadingFrom_SetSubAgentsOf(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	flow, err := TypedSetSubAgents(ctx, TypedAgent[*schema.AgenticMessage](parent), []TypedAgent[*schema.AgenticMessage]{child})
+	flow, err := typedSetSubAgents(ctx, TypedAgent[*schema.AgenticMessage](parent), []TypedAgent[*schema.AgenticMessage]{child})
 	assert.NoError(t, err)
 	assert.NotNil(t, flow)
 }
@@ -1569,7 +1569,7 @@ func TestCascadingFrom_WorkflowAgents(t *testing.T) {
 	}
 
 	t.Run("SequentialFrom", func(t *testing.T) {
-		seq, err := NewTypedSequentialAgent(ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+		seq, err := newTypedSequentialAgent(ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 			Name:        "SeqFrom",
 			Description: "Sequential from",
 			SubAgents:   makeSubs("S1", "S2"),
@@ -1579,7 +1579,7 @@ func TestCascadingFrom_WorkflowAgents(t *testing.T) {
 	})
 
 	t.Run("ParallelFrom", func(t *testing.T) {
-		par, err := NewTypedParallelAgent(ctx, &TypedParallelAgentConfig[*schema.AgenticMessage]{
+		par, err := newTypedParallelAgent(ctx, &typedParallelAgentConfig[*schema.AgenticMessage]{
 			Name:        "ParFrom",
 			Description: "Parallel from",
 			SubAgents:   makeSubs("P1", "P2"),
@@ -1589,7 +1589,7 @@ func TestCascadingFrom_WorkflowAgents(t *testing.T) {
 	})
 
 	t.Run("LoopFrom", func(t *testing.T) {
-		loop, err := NewTypedLoopAgent(ctx, &TypedLoopAgentConfig[*schema.AgenticMessage]{
+		loop, err := newTypedLoopAgent(ctx, &typedLoopAgentConfig[*schema.AgenticMessage]{
 			Name:          "LoopFrom",
 			Description:   "Loop from",
 			SubAgents:     makeSubs("L1", "L2"),
@@ -2073,7 +2073,7 @@ func TestCoverage_FlowAgent_WorkflowSubAgent(t *testing.T) {
 		},
 	}
 
-	seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:      "seq",
 		SubAgents: []TypedAgent[*schema.AgenticMessage]{step1, step2},
 	})
@@ -2168,7 +2168,7 @@ func TestCoverage_FlowAgent_HistoryRewriter(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	histRewriter := TypedHistoryRewriter[*schema.AgenticMessage](func(_ context.Context, entries []*TypedHistoryEntry[*schema.AgenticMessage]) ([]*schema.AgenticMessage, error) {
+	histRewriter := typedHistoryRewriter[*schema.AgenticMessage](func(_ context.Context, entries []*typedHistoryEntry[*schema.AgenticMessage]) ([]*schema.AgenticMessage, error) {
 		var msgs []*schema.AgenticMessage
 		for _, e := range entries {
 			msgs = append(msgs, e.Message)
@@ -2177,7 +2177,7 @@ func TestCoverage_FlowAgent_HistoryRewriter(t *testing.T) {
 		return msgs, nil
 	})
 
-	fa := toTypedFlowAgent[*schema.AgenticMessage](ctx, agent, TypedWithHistoryRewriter[*schema.AgenticMessage](histRewriter))
+	fa := toTypedFlowAgent[*schema.AgenticMessage](ctx, agent, typedWithHistoryRewriter[*schema.AgenticMessage](histRewriter))
 
 	input := &TypedAgentInput[*schema.AgenticMessage]{
 		Messages: []*schema.AgenticMessage{schema.UserAgenticMessage("original")},

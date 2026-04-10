@@ -641,23 +641,23 @@ func typedCancelAtTransition[M MessageType](ctx context.Context, info string, st
 	}
 }
 
-type TypedSequentialAgentConfig[M MessageType] struct {
+type typedSequentialAgentConfig[M MessageType] struct {
 	Name        string
 	Description string
 	SubAgents   []TypedAgent[M]
 }
 
-type SequentialAgentConfig = TypedSequentialAgentConfig[*schema.Message]
+type SequentialAgentConfig = typedSequentialAgentConfig[*schema.Message]
 
-type TypedParallelAgentConfig[M MessageType] struct {
+type typedParallelAgentConfig[M MessageType] struct {
 	Name        string
 	Description string
 	SubAgents   []TypedAgent[M]
 }
 
-type ParallelAgentConfig = TypedParallelAgentConfig[*schema.Message]
+type ParallelAgentConfig = typedParallelAgentConfig[*schema.Message]
 
-type TypedLoopAgentConfig[M MessageType] struct {
+type typedLoopAgentConfig[M MessageType] struct {
 	Name        string
 	Description string
 	SubAgents   []TypedAgent[M]
@@ -665,7 +665,7 @@ type TypedLoopAgentConfig[M MessageType] struct {
 	MaxIterations int
 }
 
-type LoopAgentConfig = TypedLoopAgentConfig[*schema.Message]
+type LoopAgentConfig = typedLoopAgentConfig[*schema.Message]
 
 func newWorkflowAgent(ctx context.Context, name, desc string,
 	subAgents []Agent, mode workflowAgentMode, maxIterations int) (*flowAgent, error) {
@@ -709,10 +709,10 @@ func newTypedWorkflowAgent[M MessageType](ctx context.Context, name, desc string
 
 	wrappedSubAgents := make([]TypedAgent[M], len(subAgents))
 	for i, subAgent := range subAgents {
-		wrappedSubAgents[i] = toTypedFlowAgent(ctx, subAgent, TypedWithDisallowTransferToParent[M]())
+		wrappedSubAgents[i] = toTypedFlowAgent(ctx, subAgent, typedWithDisallowTransferToParent[M]())
 	}
 
-	fa, err := typedSetSubAgents(ctx, TypedAgent[M](wa), wrappedSubAgents)
+	fa, err := doTypedSetSubAgents(ctx, TypedAgent[M](wa), wrappedSubAgents)
 	if err != nil {
 		return nil, err
 	}
@@ -731,8 +731,8 @@ func NewSequentialAgent(ctx context.Context, config *SequentialAgentConfig) (Res
 	return newWorkflowAgent(ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeSequential, 0)
 }
 
-// NewTypedSequentialAgent creates a new TypedSequentialAgent that runs sub-agents in sequence.
-func NewTypedSequentialAgent[M MessageType](ctx context.Context, config *TypedSequentialAgentConfig[M]) (TypedResumableAgent[M], error) {
+// newTypedSequentialAgent creates a new TypedSequentialAgent that runs sub-agents in sequence.
+func newTypedSequentialAgent[M MessageType](ctx context.Context, config *typedSequentialAgentConfig[M]) (TypedResumableAgent[M], error) {
 	return newTypedWorkflowAgent[M](ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeSequential, 0)
 }
 
@@ -741,8 +741,8 @@ func NewParallelAgent(ctx context.Context, config *ParallelAgentConfig) (Resumab
 	return newWorkflowAgent(ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeParallel, 0)
 }
 
-// NewTypedParallelAgent creates a new TypedParallelAgent that runs sub-agents in parallel.
-func NewTypedParallelAgent[M MessageType](ctx context.Context, config *TypedParallelAgentConfig[M]) (TypedResumableAgent[M], error) {
+// newTypedParallelAgent creates a new TypedParallelAgent that runs sub-agents in parallel.
+func newTypedParallelAgent[M MessageType](ctx context.Context, config *typedParallelAgentConfig[M]) (TypedResumableAgent[M], error) {
 	return newTypedWorkflowAgent[M](ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeParallel, 0)
 }
 
@@ -751,7 +751,7 @@ func NewLoopAgent(ctx context.Context, config *LoopAgentConfig) (ResumableAgent,
 	return newWorkflowAgent(ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeLoop, config.MaxIterations)
 }
 
-// NewTypedLoopAgent creates a new TypedLoopAgent that runs sub-agents in a loop.
-func NewTypedLoopAgent[M MessageType](ctx context.Context, config *TypedLoopAgentConfig[M]) (TypedResumableAgent[M], error) {
+// newTypedLoopAgent creates a new TypedLoopAgent that runs sub-agents in a loop.
+func newTypedLoopAgent[M MessageType](ctx context.Context, config *typedLoopAgentConfig[M]) (TypedResumableAgent[M], error) {
 	return newTypedWorkflowAgent[M](ctx, config.Name, config.Description, config.SubAgents, workflowAgentModeLoop, config.MaxIterations)
 }

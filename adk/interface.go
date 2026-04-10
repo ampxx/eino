@@ -357,7 +357,7 @@ type TypedAgent[M MessageType] interface {
 //go:generate  mockgen -destination ../internal/mock/adk/Agent_mock.go --package adk github.com/cloudwego/eino/adk Agent,ResumableAgent
 type Agent = TypedAgent[*schema.Message]
 
-type TypedOnSubAgents[M MessageType] interface {
+type typedOnSubAgents[M MessageType] interface {
 	OnSetSubAgents(ctx context.Context, subAgents []TypedAgent[M]) error
 	OnSetAsSubAgent(ctx context.Context, parent TypedAgent[M]) error
 
@@ -365,7 +365,7 @@ type TypedOnSubAgents[M MessageType] interface {
 }
 
 // OnSubAgents is the concrete *schema.Message variant.
-type OnSubAgents = TypedOnSubAgents[*schema.Message]
+type OnSubAgents = typedOnSubAgents[*schema.Message]
 
 type TypedResumableAgent[M MessageType] interface {
 	TypedAgent[M]

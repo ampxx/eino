@@ -335,7 +335,7 @@ func TestAgenticIntegration_NestedParallelWorkflow(t *testing.T) {
 		}
 	}
 
-	innerParallel, err := NewTypedParallelAgent[*schema.AgenticMessage](ctx, &TypedParallelAgentConfig[*schema.AgenticMessage]{
+	innerParallel, err := newTypedParallelAgent[*schema.AgenticMessage](ctx, &typedParallelAgentConfig[*schema.AgenticMessage]{
 		Name:      "inner-parallel",
 		SubAgents: []TypedAgent[*schema.AgenticMessage]{makeAgent("inner1", "inner1 out"), makeAgent("inner2", "inner2 out")},
 	})
@@ -344,7 +344,7 @@ func TestAgenticIntegration_NestedParallelWorkflow(t *testing.T) {
 	predecessor := makeAgent("predecessor", "predecessor out")
 	successor := makeAgent("successor", "successor out")
 
-	seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:      "outer-seq",
 		SubAgents: []TypedAgent[*schema.AgenticMessage]{predecessor, innerParallel, successor},
 	})
@@ -481,7 +481,7 @@ func TestAgenticIntegration_SequentialVisibility(t *testing.T) {
 		},
 	}
 
-	seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:      "vis-seq",
 		SubAgents: []TypedAgent[*schema.AgenticMessage]{sa1, sa2},
 	})
@@ -549,7 +549,7 @@ func TestAgenticIntegration_DeterministicTransfer(t *testing.T) {
 		},
 	}
 
-	flowAgent, err := TypedSetSubAgents[*schema.AgenticMessage](ctx,
+	flowAgent, err := typedSetSubAgents[*schema.AgenticMessage](ctx,
 		TypedAgent[*schema.AgenticMessage](outerAgent),
 		[]TypedAgent[*schema.AgenticMessage]{innerAgent})
 	require.NoError(t, err)
@@ -689,7 +689,7 @@ func TestAgenticIntegration_InterruptEventFormation(t *testing.T) {
 			},
 		}
 
-		flowAgent, err := TypedSetSubAgents[*schema.AgenticMessage](ctx,
+		flowAgent, err := typedSetSubAgents[*schema.AgenticMessage](ctx,
 			TypedAgent[*schema.AgenticMessage](sa1),
 			[]TypedAgent[*schema.AgenticMessage]{sa2})
 		require.NoError(t, err)
@@ -739,7 +739,7 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 			},
 		}
 
-		seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+		seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 			Name:      "seq-normal",
 			SubAgents: []TypedAgent[*schema.AgenticMessage]{sa1, sa2},
 		})
@@ -792,7 +792,7 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 			},
 		}
 
-		seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+		seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 			Name:      "seq-exit",
 			SubAgents: []TypedAgent[*schema.AgenticMessage]{sa1, sa2},
 		})
@@ -837,7 +837,7 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 			},
 		}
 
-		parallelAgent, err := NewTypedParallelAgent[*schema.AgenticMessage](ctx, &TypedParallelAgentConfig[*schema.AgenticMessage]{
+		parallelAgent, err := newTypedParallelAgent[*schema.AgenticMessage](ctx, &typedParallelAgentConfig[*schema.AgenticMessage]{
 			Name:      "par-normal",
 			SubAgents: []TypedAgent[*schema.AgenticMessage]{sa1, sa2},
 		})
@@ -886,7 +886,7 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 			},
 		}
 
-		loopAgent, err := NewTypedLoopAgent[*schema.AgenticMessage](ctx, &TypedLoopAgentConfig[*schema.AgenticMessage]{
+		loopAgent, err := newTypedLoopAgent[*schema.AgenticMessage](ctx, &typedLoopAgentConfig[*schema.AgenticMessage]{
 			Name:          "loop-normal",
 			SubAgents:     []TypedAgent[*schema.AgenticMessage]{sa},
 			MaxIterations: 3,
@@ -936,7 +936,7 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 			},
 		}
 
-		loopAgent, err := NewTypedLoopAgent[*schema.AgenticMessage](ctx, &TypedLoopAgentConfig[*schema.AgenticMessage]{
+		loopAgent, err := newTypedLoopAgent[*schema.AgenticMessage](ctx, &typedLoopAgentConfig[*schema.AgenticMessage]{
 			Name:          "loop-break",
 			SubAgents:     []TypedAgent[*schema.AgenticMessage]{sa},
 			MaxIterations: 5,

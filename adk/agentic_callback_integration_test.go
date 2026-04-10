@@ -340,7 +340,7 @@ func TestAgenticCallbackWithSequentialWorkflow(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	seqAgent, err := NewTypedSequentialAgent[*schema.AgenticMessage](ctx, &TypedSequentialAgentConfig[*schema.AgenticMessage]{
+	seqAgent, err := newTypedSequentialAgent[*schema.AgenticMessage](ctx, &typedSequentialAgentConfig[*schema.AgenticMessage]{
 		Name:        "SequentialAgent",
 		Description: "Sequential workflow",
 		SubAgents:   []TypedAgent[*schema.AgenticMessage]{agent1, agent2},
@@ -413,7 +413,7 @@ func TestCoverage_FlowAgent_RunWithCallbacksAndSubAgents(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ra, err := TypedSetSubAgents[*schema.AgenticMessage](ctx, parent, []TypedAgent[*schema.AgenticMessage]{child})
+	ra, err := typedSetSubAgents[*schema.AgenticMessage](ctx, parent, []TypedAgent[*schema.AgenticMessage]{child})
 	require.NoError(t, err)
 	require.NotNil(t, ra)
 

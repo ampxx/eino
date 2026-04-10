@@ -40,15 +40,15 @@ type typedDeterministicTransferState[M MessageType] struct {
 	EventList []*typedAgentEventWrapper[M]
 }
 
-// TypedAgentWithDeterministicTransferTo wraps a TypedAgent with deterministic transfer logic to specified agents.
-func TypedAgentWithDeterministicTransferTo[M MessageType](_ context.Context, config *TypedDeterministicTransferConfig[M]) TypedAgent[M] {
+// typedAgentWithDeterministicTransferTo wraps a TypedAgent with deterministic transfer logic to specified agents.
+func typedAgentWithDeterministicTransferTo[M MessageType](_ context.Context, config *typedDeterministicTransferConfig[M]) TypedAgent[M] {
 	if ra, ok := config.Agent.(TypedResumableAgent[M]); ok {
-		return &typedResumableAgentWithDeterministicTransferTo[M]{
+		return &resumableDeterministicTransferWrapper[M]{
 			agent:        ra,
 			toAgentNames: config.ToAgentNames,
 		}
 	}
-	return &typedAgentWithDeterministicTransferTo[M]{
+	return &deterministicTransferWrapper[M]{
 		agent:        config.Agent,
 		toAgentNames: config.ToAgentNames,
 	}
@@ -56,30 +56,30 @@ func TypedAgentWithDeterministicTransferTo[M MessageType](_ context.Context, con
 
 // AgentWithDeterministicTransferTo wraps an Agent with deterministic transfer logic to specified agents.
 func AgentWithDeterministicTransferTo(_ context.Context, config *DeterministicTransferConfig) Agent {
-	return TypedAgentWithDeterministicTransferTo[*schema.Message](context.Background(), config)
+	return typedAgentWithDeterministicTransferTo[*schema.Message](context.Background(), config)
 }
 
-type typedAgentWithDeterministicTransferTo[M MessageType] struct {
+type deterministicTransferWrapper[M MessageType] struct {
 	agent        TypedAgent[M]
 	toAgentNames []string
 }
 
-func (a *typedAgentWithDeterministicTransferTo[M]) Description(ctx context.Context) string {
+func (a *deterministicTransferWrapper[M]) Description(ctx context.Context) string {
 	return a.agent.Description(ctx)
 }
 
-func (a *typedAgentWithDeterministicTransferTo[M]) Name(ctx context.Context) string {
+func (a *deterministicTransferWrapper[M]) Name(ctx context.Context) string {
 	return a.agent.Name(ctx)
 }
 
-func (a *typedAgentWithDeterministicTransferTo[M]) GetType() string {
+func (a *deterministicTransferWrapper[M]) GetType() string {
 	if typer, ok := a.agent.(components.Typer); ok {
 		return typer.GetType()
 	}
 	return "DeterministicTransfer"
 }
 
-func (a *typedAgentWithDeterministicTransferTo[M]) Run(ctx context.Context,
+func (a *deterministicTransferWrapper[M]) Run(ctx context.Context,
 	input *TypedAgentInput[M], options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 
 	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
@@ -94,27 +94,27 @@ func (a *typedAgentWithDeterministicTransferTo[M]) Run(ctx context.Context,
 	return iterator
 }
 
-type typedResumableAgentWithDeterministicTransferTo[M MessageType] struct {
+type resumableDeterministicTransferWrapper[M MessageType] struct {
 	agent        TypedResumableAgent[M]
 	toAgentNames []string
 }
 
-func (a *typedResumableAgentWithDeterministicTransferTo[M]) Description(ctx context.Context) string {
+func (a *resumableDeterministicTransferWrapper[M]) Description(ctx context.Context) string {
 	return a.agent.Description(ctx)
 }
 
-func (a *typedResumableAgentWithDeterministicTransferTo[M]) Name(ctx context.Context) string {
+func (a *resumableDeterministicTransferWrapper[M]) Name(ctx context.Context) string {
 	return a.agent.Name(ctx)
 }
 
-func (a *typedResumableAgentWithDeterministicTransferTo[M]) GetType() string {
+func (a *resumableDeterministicTransferWrapper[M]) GetType() string {
 	if typer, ok := a.agent.(components.Typer); ok {
 		return typer.GetType()
 	}
 	return "DeterministicTransfer"
 }
 
-func (a *typedResumableAgentWithDeterministicTransferTo[M]) Run(ctx context.Context,
+func (a *resumableDeterministicTransferWrapper[M]) Run(ctx context.Context,
 	input *TypedAgentInput[M], options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 
 	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
@@ -129,7 +129,7 @@ func (a *typedResumableAgentWithDeterministicTransferTo[M]) Run(ctx context.Cont
 	return iterator
 }
 
-func (a *typedResumableAgentWithDeterministicTransferTo[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func (a *resumableDeterministicTransferWrapper[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
 		return typedResumeFlowAgentWithIsolatedSession[M](ctx, fa, info, a.toAgentNames, opts...)
 	}

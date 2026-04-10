@@ -759,7 +759,7 @@ func TestCoverage_DeterministicTransfer_GetType_Agentic(t *testing.T) {
 		description: "typed desc",
 	}
 
-	wrapped := TypedAgentWithDeterministicTransferTo(ctx, &TypedDeterministicTransferConfig[*schema.AgenticMessage]{
+	wrapped := typedAgentWithDeterministicTransferTo(ctx, &typedDeterministicTransferConfig[*schema.AgenticMessage]{
 		Agent:        agent,
 		ToAgentNames: []string{"dest"},
 	})
@@ -827,7 +827,7 @@ func TestCoverage_DeterministicTransfer_AgenticFlowAgent_InterruptResume(t *test
 
 	innerFlowAgent := toTypedFlowAgent[*schema.AgenticMessage](ctx, innerAgent)
 
-	wrapped := TypedAgentWithDeterministicTransferTo(ctx, &TypedDeterministicTransferConfig[*schema.AgenticMessage]{
+	wrapped := typedAgentWithDeterministicTransferTo(ctx, &typedDeterministicTransferConfig[*schema.AgenticMessage]{
 		Agent:        innerFlowAgent,
 		ToAgentNames: []string{"next_agent"},
 	})
@@ -928,7 +928,7 @@ func TestCoverage_DeterministicTransfer_AgenticNonFlowAgent(t *testing.T) {
 		},
 	}
 
-	wrapped := TypedAgentWithDeterministicTransferTo(ctx, &TypedDeterministicTransferConfig[*schema.AgenticMessage]{
+	wrapped := typedAgentWithDeterministicTransferTo(ctx, &typedDeterministicTransferConfig[*schema.AgenticMessage]{
 		Agent:        agent,
 		ToAgentNames: []string{"agent-b"},
 	})
@@ -970,7 +970,7 @@ func TestCoverage_ResumableDeterministicTransfer_Agentic_GetType(t *testing.T) {
 		},
 	}
 
-	wrapped := TypedAgentWithDeterministicTransferTo(ctx, &TypedDeterministicTransferConfig[*schema.AgenticMessage]{
+	wrapped := typedAgentWithDeterministicTransferTo(ctx, &typedDeterministicTransferConfig[*schema.AgenticMessage]{
 		Agent:        agent,
 		ToAgentNames: []string{"dest"},
 	})

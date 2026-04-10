@@ -31,17 +31,17 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-type TypedHistoryEntry[M MessageType] struct {
+type typedHistoryEntry[M MessageType] struct {
 	IsUserInput bool
 	AgentName   string
 	Message     M
 }
 
-type HistoryEntry = TypedHistoryEntry[*schema.Message]
+type HistoryEntry = typedHistoryEntry[*schema.Message]
 
-type TypedHistoryRewriter[M MessageType] func(ctx context.Context, entries []*TypedHistoryEntry[M]) ([]M, error)
+type typedHistoryRewriter[M MessageType] func(ctx context.Context, entries []*typedHistoryEntry[M]) ([]M, error)
 
-type HistoryRewriter = TypedHistoryRewriter[*schema.Message]
+type HistoryRewriter = typedHistoryRewriter[*schema.Message]
 
 type typedFlowAgent[M MessageType] struct {
 	TypedAgent[M]
@@ -50,7 +50,7 @@ type typedFlowAgent[M MessageType] struct {
 	parentAgent *typedFlowAgent[M]
 
 	disallowTransferToParent bool
-	historyRewriter          TypedHistoryRewriter[M]
+	historyRewriter          typedHistoryRewriter[M]
 
 	checkPointStore compose.CheckPointStore
 }
@@ -78,17 +78,17 @@ func SetSubAgents(ctx context.Context, agent Agent, subAgents []Agent) (Resumabl
 	return setSubAgents(ctx, agent, subAgents)
 }
 
-type TypedAgentOption[M MessageType] func(options *typedFlowAgent[M])
+type typedAgentOption[M MessageType] func(options *typedFlowAgent[M])
 
-type AgentOption = TypedAgentOption[*schema.Message]
+type AgentOption = typedAgentOption[*schema.Message]
 
 // WithDisallowTransferToParent prevents a sub-agent from transferring to its parent.
 func WithDisallowTransferToParent() AgentOption {
-	return TypedWithDisallowTransferToParent[*schema.Message]()
+	return typedWithDisallowTransferToParent[*schema.Message]()
 }
 
-// TypedWithDisallowTransferToParent prevents a typed sub-agent from transferring to its parent.
-func TypedWithDisallowTransferToParent[M MessageType]() TypedAgentOption[M] {
+// typedWithDisallowTransferToParent prevents a typed sub-agent from transferring to its parent.
+func typedWithDisallowTransferToParent[M MessageType]() typedAgentOption[M] {
 	return func(fa *typedFlowAgent[M]) {
 		fa.disallowTransferToParent = true
 	}
@@ -96,17 +96,17 @@ func TypedWithDisallowTransferToParent[M MessageType]() TypedAgentOption[M] {
 
 // WithHistoryRewriter sets a rewriter to transform conversation history.
 func WithHistoryRewriter(h HistoryRewriter) AgentOption {
-	return TypedWithHistoryRewriter[*schema.Message](h)
+	return typedWithHistoryRewriter[*schema.Message](h)
 }
 
-// TypedWithHistoryRewriter sets a typed rewriter to transform conversation history.
-func TypedWithHistoryRewriter[M MessageType](h TypedHistoryRewriter[M]) TypedAgentOption[M] {
+// typedWithHistoryRewriter sets a typed rewriter to transform conversation history.
+func typedWithHistoryRewriter[M MessageType](h typedHistoryRewriter[M]) typedAgentOption[M] {
 	return func(fa *typedFlowAgent[M]) {
 		fa.historyRewriter = h
 	}
 }
 
-func toTypedFlowAgent[M MessageType](ctx context.Context, agent TypedAgent[M], opts ...TypedAgentOption[M]) *typedFlowAgent[M] {
+func toTypedFlowAgent[M MessageType](ctx context.Context, agent TypedAgent[M], opts ...typedAgentOption[M]) *typedFlowAgent[M] {
 	var fa *typedFlowAgent[M]
 	var ok bool
 	if fa, ok = agent.(*typedFlowAgent[M]); !ok {
@@ -134,19 +134,19 @@ func AgentWithOptions(ctx context.Context, agent Agent, opts ...AgentOption) Age
 	return toFlowAgent(ctx, agent, opts...)
 }
 
-// TypedSetSubAgents sets the sub-agents for a typed agent and returns the resulting TypedResumableAgent.
-func TypedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], subAgents []TypedAgent[M]) (TypedResumableAgent[M], error) {
-	return typedSetSubAgents(ctx, agent, subAgents)
+// typedSetSubAgents sets the sub-agents for a typed agent and returns the resulting TypedResumableAgent.
+func typedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], subAgents []TypedAgent[M]) (TypedResumableAgent[M], error) {
+	return doTypedSetSubAgents(ctx, agent, subAgents)
 }
 
-func typedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], subAgents []TypedAgent[M]) (*typedFlowAgent[M], error) {
+func doTypedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], subAgents []TypedAgent[M]) (*typedFlowAgent[M], error) {
 	fa := toTypedFlowAgent(ctx, agent)
 
 	if len(fa.subAgents) > 0 {
 		return nil, errors.New("agent's sub-agents has already been set")
 	}
 
-	if onAgent, ok_ := fa.TypedAgent.(TypedOnSubAgents[M]); ok_ {
+	if onAgent, ok_ := fa.TypedAgent.(typedOnSubAgents[M]); ok_ {
 		err := onAgent.OnSetSubAgents(ctx, subAgents)
 		if err != nil {
 			return nil, err
@@ -161,7 +161,7 @@ func typedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], 
 		}
 
 		fsa.parentAgent = fa
-		if onAgent, ok__ := fsa.TypedAgent.(TypedOnSubAgents[M]); ok__ {
+		if onAgent, ok__ := fsa.TypedAgent.(typedOnSubAgents[M]); ok__ {
 			err := onAgent.OnSetAsSubAgent(ctx, agent)
 			if err != nil {
 				return nil, err
@@ -182,7 +182,7 @@ func typedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], 
 }
 
 func setSubAgents(ctx context.Context, agent Agent, subAgents []Agent) (*flowAgent, error) {
-	return typedSetSubAgents(ctx, agent, subAgents)
+	return doTypedSetSubAgents(ctx, agent, subAgents)
 }
 
 func (a *typedFlowAgent[M]) getAgent(ctx context.Context, name string) *typedFlowAgent[M] {
@@ -326,7 +326,7 @@ func typedRewriteMessage[M MessageType](msg M, agentName string) M {
 	}
 }
 
-func typedGenMsg[M MessageType](entry *TypedHistoryEntry[M], agentName string) (M, error) {
+func typedGenMsg[M MessageType](entry *typedHistoryEntry[M], agentName string) (M, error) {
 	msg := entry.Message
 	if entry.AgentName != agentName {
 		msg = typedRewriteMessage(msg, entry.AgentName)
@@ -390,10 +390,10 @@ func (a *typedFlowAgent[M]) genAgentInput(ctx context.Context, runCtx *runContex
 	}
 
 	events := getTypedEvents[M](runCtx.Session)
-	historyEntries := make([]*TypedHistoryEntry[M], 0)
+	historyEntries := make([]*typedHistoryEntry[M], 0)
 
 	for _, m := range input.Messages {
-		historyEntries = append(historyEntries, &TypedHistoryEntry[M]{
+		historyEntries = append(historyEntries, &typedHistoryEntry[M]{
 			IsUserInput: true,
 			Message:     m,
 		})
@@ -421,7 +421,7 @@ func (a *typedFlowAgent[M]) genAgentInput(ctx context.Context, runCtx *runContex
 			continue
 		}
 
-		historyEntries = append(historyEntries, &TypedHistoryEntry[M]{
+		historyEntries = append(historyEntries, &typedHistoryEntry[M]{
 			AgentName: event.event.AgentName,
 			Message:   msg,
 		})
@@ -436,8 +436,8 @@ func (a *typedFlowAgent[M]) genAgentInput(ctx context.Context, runCtx *runContex
 	return input, nil
 }
 
-func buildTypedDefaultHistoryRewriter[M MessageType](agentName string) TypedHistoryRewriter[M] {
-	return func(ctx context.Context, entries []*TypedHistoryEntry[M]) ([]M, error) {
+func buildTypedDefaultHistoryRewriter[M MessageType](agentName string) typedHistoryRewriter[M] {
+	return func(ctx context.Context, entries []*typedHistoryEntry[M]) ([]M, error) {
 		messages := make([]M, 0, len(entries))
 		var err error
 		for _, entry := range entries {
@@ -607,12 +607,12 @@ func (a *typedFlowAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts .
 	return wrapIterWithCancelCtx(typedWrapIterWithOnEnd(ctx, innerIter), cancelCtx)
 }
 
-type TypedDeterministicTransferConfig[M MessageType] struct {
+type typedDeterministicTransferConfig[M MessageType] struct {
 	Agent        TypedAgent[M]
 	ToAgentNames []string
 }
 
-type DeterministicTransferConfig = TypedDeterministicTransferConfig[*schema.Message]
+type DeterministicTransferConfig = typedDeterministicTransferConfig[*schema.Message]
 
 func (a *typedFlowAgent[M]) run(
 	ctx context.Context,

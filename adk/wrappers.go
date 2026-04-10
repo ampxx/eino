@@ -51,9 +51,10 @@ func buildModelWrappers[M MessageType](m model.BaseModel[M], config *typedModelW
 func buildModelWrappersImpl[M MessageType](m model.BaseModel[M], config *typedModelWrapperConfig[M]) model.BaseModel[M] {
 	var wrapped model.BaseModel[M] = m
 
-	// failoverProxyModel must be the innermost wrapper to read the selected failover model from context.
 	if config.failoverConfig != nil {
-		wrapped = &failoverProxyModel{}
+		if proxy, ok := any(&failoverProxyModel{}).(model.BaseModel[M]); ok {
+			wrapped = proxy
+		}
 	}
 
 	if !components.IsCallbacksEnabled(wrapped) {
@@ -342,9 +343,9 @@ func (m *typedEventSenderModel[M]) Stream(ctx context.Context, input []M, opts .
 // It wraps stream errors as WillRetryError when retry or failover is configured,
 // so that flow.go:genAgentInput() can skip events from failed attempts instead of
 // treating them as fatal errors.
-func (m *eventSenderModel) buildErrWrapper(ctx context.Context) func(error) error {
+func (m *typedEventSenderModel[M]) buildErrWrapper(ctx context.Context) func(error) error {
 	var retryAttempt int
-	_ = compose.ProcessState(ctx, func(_ context.Context, st *State) error {
+	_ = compose.ProcessState(ctx, func(_ context.Context, st *typedState[M]) error {
 		retryAttempt = st.getRetryAttempt()
 		return nil
 	})
@@ -678,9 +679,11 @@ func (w *typedStateModelWrapper[M]) wrapGenerateEndpoint(endpoint typedGenerateE
 	if w.modelFailoverConfig != nil {
 		config := w.modelFailoverConfig
 		innerEndpoint := endpoint
-		endpoint = func(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-			failoverWrapper := newFailoverModelWrapper(&endpointModel{generate: innerEndpoint}, config)
-			return failoverWrapper.Generate(ctx, input, opts...)
+		endpoint = func(ctx context.Context, input []M, opts ...model.Option) (M, error) {
+			msgEndpoint := any(innerEndpoint).(typedGenerateEndpoint[*schema.Message])
+			failoverWrapper := newFailoverModelWrapper(&typedEndpointModel[*schema.Message]{generate: msgEndpoint}, config)
+			result, err := failoverWrapper.Generate(ctx, any(input).([]*schema.Message), opts...)
+			return any(result).(M), err
 		}
 	}
 
@@ -740,9 +743,14 @@ func (w *typedStateModelWrapper[M]) wrapStreamEndpoint(endpoint typedStreamEndpo
 	if w.modelFailoverConfig != nil {
 		config := w.modelFailoverConfig
 		innerEndpoint := endpoint
-		endpoint = func(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-			failoverWrapper := newFailoverModelWrapper(&endpointModel{stream: innerEndpoint}, config)
-			return failoverWrapper.Stream(ctx, input, opts...)
+		endpoint = func(ctx context.Context, input []M, opts ...model.Option) (*schema.StreamReader[M], error) {
+			msgEndpoint := any(innerEndpoint).(typedStreamEndpoint[*schema.Message])
+			failoverWrapper := newFailoverModelWrapper(&typedEndpointModel[*schema.Message]{stream: msgEndpoint}, config)
+			result, err := failoverWrapper.Stream(ctx, any(input).([]*schema.Message), opts...)
+			if err != nil {
+				return nil, err
+			}
+			return any(result).(*schema.StreamReader[M]), nil
 		}
 	}
 

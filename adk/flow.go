@@ -592,9 +592,9 @@ func (a *typedFlowAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts .
 				innerIter := ra.Resume(ctx, info, filterCancelOption(opts)...)
 				return wrapIterWithCancelCtx(typedWrapIterWithOnEnd(ctx, innerIter), cancelCtx)
 			}
-			return wrapIterWithOnEnd(ctx, genErrorIter(fmt.Errorf(
+			return typedWrapIterWithOnEnd(ctx, typedErrorIter[M](fmt.Errorf(
 				"failed to resume agent: agent '%s' (type %T) has no sub-agents and does not implement ResumableAgent interface. "+
-					"To support resume, your custom agent wrapper must implement the ResumableAgent interface", agentName, a.Agent)))
+					"To support resume, your custom agent wrapper must implement the ResumableAgent interface", agentName, a.TypedAgent)))
 		}
 		if cancelCtx != nil {
 			cancelCtx.markDone()

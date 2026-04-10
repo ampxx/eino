@@ -78,7 +78,7 @@ func (m *failoverProxyModel) prepareCallbacks(ctx context.Context) (context.Cont
 
 	target := current.model
 	if !components.IsCallbacksEnabled(target) {
-		target = (&callbackInjectionModelWrapper{}).WrapModel(target)
+		target = typedCallbackInjectionModelWrapper[*schema.Message]{}.wrapModel(target)
 	}
 
 	return ctx, target, nil

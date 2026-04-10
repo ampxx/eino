@@ -74,7 +74,7 @@ func TestRetryThenFailover_Generate_RetryExhaustedTriggersFailover(t *testing.T)
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})
@@ -135,7 +135,7 @@ func TestRetryThenFailover_Generate_AllExhausted(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})
@@ -203,7 +203,7 @@ func TestRetryThenFailover_Stream_RetryExhaustedTriggersFailover(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})
@@ -261,7 +261,7 @@ func TestRetryThenFailover_Generate_RetrySucceedsNoFailover(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})
@@ -326,7 +326,7 @@ func TestRetryThenFailover_Generate_NonRetryableErrorTriggersFailover(t *testing
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})
@@ -390,7 +390,7 @@ func TestRetryThenFailover_Stream_AllExhausted(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		retryConfig:    retryCfg,
 		failoverConfig: failoverCfg,
 	})

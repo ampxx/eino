@@ -662,7 +662,7 @@ type TurnLoop[T any, M MessageType] struct {
 	lateSealed bool
 }
 
-func (l *TurnLoop[T]) appendLate(item T) {
+func (l *TurnLoop[T, M]) appendLate(item T) {
 	l.lateMu.Lock()
 	defer l.lateMu.Unlock()
 	if l.lateSealed {

@@ -47,7 +47,7 @@ func TestBuildModelWrappers_FailoverProxyInner(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(base, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](base, &modelWrapperConfig{
 		failoverConfig: failoverCfg,
 	})
 
@@ -101,7 +101,7 @@ func TestStateModelWrapper_Generate_WithFailover(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		failoverConfig: failoverCfg,
 	})
 
@@ -162,7 +162,7 @@ func TestStateModelWrapper_Stream_WithFailover(t *testing.T) {
 		},
 	}
 
-	wrapped := buildModelWrappers(m1, &modelWrapperConfig{
+	wrapped := buildModelWrappers[*schema.Message](m1, &modelWrapperConfig{
 		failoverConfig: failoverCfg,
 	})
 

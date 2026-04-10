@@ -48,7 +48,7 @@ type typedChatModelAgentExecCtx[M MessageType] struct {
 	cancelCtx             *cancelContext
 
 	// failoverLastSuccessModel is the last success model only used in failover middleware.
-	failoverLastSuccessModel model.BaseChatModel
+	failoverLastSuccessModel model.BaseModel[M]
 }
 
 func (e *typedChatModelAgentExecCtx[M]) send(event *TypedAgentEvent[M]) {
@@ -1092,7 +1092,7 @@ func (a *TypedChatModelAgent[M]) buildMessageReActRunFunc(ctx context.Context, b
 			runtimeReturnDirectly:    mp.returnDirectly,
 			generator:                mp.generator,
 			cancelCtx:                cancelCtx,
-			failoverLastSuccessModel: a.model,
+			failoverLastSuccessModel: msgModel,
 		})
 
 		if cancelCtx != nil && cancelCtx.shouldCancel() {

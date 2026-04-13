@@ -31,21 +31,13 @@ import (
 
 type failoverCurrentModelKey struct{}
 
-type failoverCurrentModel struct {
-	model any
+func typedSetFailoverCurrentModel[M MessageType](ctx context.Context, currentModel model.BaseModel[M]) context.Context {
+	return context.WithValue(ctx, failoverCurrentModelKey{}, currentModel)
 }
 
-func setFailoverCurrentModel(ctx context.Context, currentModel any) context.Context {
-	return context.WithValue(ctx, failoverCurrentModelKey{}, &failoverCurrentModel{
-		model: currentModel,
-	})
-}
-
-func getFailoverCurrentModel(ctx context.Context) *failoverCurrentModel {
-	if fm, ok := ctx.Value(failoverCurrentModelKey{}).(*failoverCurrentModel); ok {
-		return fm
-	}
-	return nil
+func typedGetFailoverCurrentModel[M MessageType](ctx context.Context) (model.BaseModel[M], bool) {
+	m, ok := ctx.Value(failoverCurrentModelKey{}).(model.BaseModel[M])
+	return m, ok
 }
 
 type failoverHasMoreAttemptsKey struct{}
@@ -68,14 +60,9 @@ type typedFailoverProxyModel[M MessageType] struct {
 }
 
 func (m *typedFailoverProxyModel[M]) prepareCallbacks(ctx context.Context) (context.Context, model.BaseModel[M], error) {
-	current := getFailoverCurrentModel(ctx)
-	if current == nil || current.model == nil {
-		return nil, nil, errors.New("failover current model not found in context")
-	}
-
-	target, ok := current.model.(model.BaseModel[M])
+	target, ok := typedGetFailoverCurrentModel[M](ctx)
 	if !ok {
-		return nil, nil, fmt.Errorf("failover current model type mismatch: expected model.BaseModel[%T], got %T", *new(M), current.model)
+		return nil, nil, errors.New("failover current model not found in context")
 	}
 
 	typ, _ := components.GetType(target)
@@ -277,6 +264,7 @@ func (f *typedFailoverModelWrapper[M]) needFailover(ctx context.Context, outputM
 		return false
 	}
 
+	// ShouldFailover is validated at agent construction; nil here indicates a programmer error.
 	return f.config.ShouldFailover(ctx, toSchemaMessage(outputMessage), outputErr)
 }
 
@@ -305,6 +293,7 @@ func (f *typedFailoverModelWrapper[M]) getFailoverModel(ctx context.Context, fai
 }
 
 func (f *typedFailoverModelWrapper[M]) Generate(ctx context.Context, input []M, opts ...model.Option) (M, error) {
+	// Defensive: GetFailoverModel is validated non-nil at agent construction.
 	if f.config.GetFailoverModel == nil {
 		return f.inner.Generate(ctx, input, opts...)
 	}
@@ -312,13 +301,14 @@ func (f *typedFailoverModelWrapper[M]) Generate(ctx context.Context, input []M, 
 	var lastOutputMessage M
 	var lastErr error
 
+	// Try lastSuccessModel first if available.
 	if lastSuccess := typedGetLastSuccessModel[M](ctx); lastSuccess != nil {
 		if err := ctx.Err(); err != nil {
 			var zero M
 			return zero, err
 		}
 
-		modelCtx := setFailoverCurrentModel(ctx, lastSuccess)
+		modelCtx := typedSetFailoverCurrentModel(ctx, lastSuccess)
 		modelCtx = withFailoverHasMoreAttempts(modelCtx, f.config.MaxRetries > 0)
 		result, err := f.inner.Generate(modelCtx, input, opts...)
 		if err == nil {
@@ -362,7 +352,7 @@ func (f *typedFailoverModelWrapper[M]) Generate(ctx context.Context, input []M, 
 			currentInput = input
 		}
 
-		modelCtx := setFailoverCurrentModel(ctx, currentModel)
+		modelCtx := typedSetFailoverCurrentModel(ctx, currentModel)
 		modelCtx = withFailoverHasMoreAttempts(modelCtx, attempt < f.config.MaxRetries)
 		result, err := f.inner.Generate(modelCtx, currentInput, opts...)
 		lastOutputMessage = result
@@ -387,6 +377,7 @@ func (f *typedFailoverModelWrapper[M]) Generate(ctx context.Context, input []M, 
 
 func (f *typedFailoverModelWrapper[M]) Stream(ctx context.Context, input []M, opts ...model.Option) (
 	*schema.StreamReader[M], error) {
+	// Defensive: GetFailoverModel is validated non-nil at agent construction.
 	if f.config.GetFailoverModel == nil {
 		return f.inner.Stream(ctx, input, opts...)
 	}
@@ -394,12 +385,13 @@ func (f *typedFailoverModelWrapper[M]) Stream(ctx context.Context, input []M, op
 	var lastOutputMessage M
 	var lastErr error
 
+	// Try lastSuccessModel first if available.
 	if lastSuccess := typedGetLastSuccessModel[M](ctx); lastSuccess != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
-		modelCtx := setFailoverCurrentModel(ctx, lastSuccess)
+		modelCtx := typedSetFailoverCurrentModel(ctx, lastSuccess)
 		modelCtx = withFailoverHasMoreAttempts(modelCtx, f.config.MaxRetries > 0)
 		stream, err := f.inner.Stream(modelCtx, input, opts...)
 		if err != nil {
@@ -454,7 +446,7 @@ func (f *typedFailoverModelWrapper[M]) Stream(ctx context.Context, input []M, op
 			currentInput = input
 		}
 
-		modelCtx := setFailoverCurrentModel(ctx, currentModel)
+		modelCtx := typedSetFailoverCurrentModel(ctx, currentModel)
 		modelCtx = withFailoverHasMoreAttempts(modelCtx, attempt < f.config.MaxRetries)
 		stream, err := f.inner.Stream(modelCtx, currentInput, opts...)
 		if err != nil {
@@ -472,6 +464,22 @@ func (f *typedFailoverModelWrapper[M]) Stream(ctx context.Context, input []M, op
 			continue
 		}
 
+		// The stream returned by f.inner.Stream is already Copy'd by the inner eventSender layer: one
+		// copy is forwarded to the client in real time via events. Therefore consuming a copy here does
+		// NOT block client-side streaming.
+		//
+		// We Copy the stream into two readers:
+		//   - checkCopy: consumed synchronously to surface mid-stream errors and decide whether to fail over.
+		//   - returnCopy: returned to the caller (stateModelWrapper), which also consumes synchronously to
+		//     build state (AfterModelRewriteState), so waiting here adds no extra latency.
+		//
+		// If checkCopy errors and failover is allowed, we close returnCopy and retry with the next model.
+		// Otherwise we return returnCopy.
+		//
+		// NOTE on duplicate events during failover: when a retry happens, events from the failed attempt
+		// may already have been emitted to the client, and the retry will emit a new stream. Client-side
+		// handlers are expected to handle multiple rounds (e.g., reset on retry or deduplicate by attempt
+		// metadata).
 		copies := stream.Copy(2)
 		checkCopy := copies[0]
 		returnCopy := copies[1]

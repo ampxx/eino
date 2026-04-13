@@ -104,19 +104,21 @@ func TestFailoverCurrentModelContext(t *testing.T) {
 				return schema.StreamReaderFromArray([]*schema.Message{schema.AssistantMessage("ok", nil)}), nil
 			},
 		}
-		ctx = setFailoverCurrentModel(ctx, m)
-		got := getFailoverCurrentModel(ctx)
-		require.NotNil(t, got)
-		require.Same(t, m, got.model)
+		ctx = typedSetFailoverCurrentModel[*schema.Message](ctx, m)
+		got, ok := typedGetFailoverCurrentModel[*schema.Message](ctx)
+		require.True(t, ok)
+		require.Same(t, m, got)
 	})
 
 	t.Run("wrong type", func(t *testing.T) {
 		ctx := context.WithValue(context.Background(), failoverCurrentModelKey{}, "bad")
-		require.Nil(t, getFailoverCurrentModel(ctx))
+		_, ok := typedGetFailoverCurrentModel[*schema.Message](ctx)
+		require.False(t, ok)
 	})
 
 	t.Run("missing", func(t *testing.T) {
-		require.Nil(t, getFailoverCurrentModel(context.Background()))
+		_, ok := typedGetFailoverCurrentModel[*schema.Message](context.Background())
+		require.False(t, ok)
 	})
 }
 
@@ -145,7 +147,7 @@ func TestFailoverProxyModel(t *testing.T) {
 				return schema.StreamReaderFromArray([]*schema.Message{schema.AssistantMessage("routed", nil)}), nil
 			},
 		}
-		ctx := setFailoverCurrentModel(context.Background(), target)
+		ctx := typedSetFailoverCurrentModel[*schema.Message](context.Background(), target)
 		p := &failoverProxyModel{}
 		msg, err := p.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
 		require.NoError(t, err)

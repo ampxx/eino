@@ -106,8 +106,7 @@ type sequentialWorkflowState struct {
 }
 
 type parallelWorkflowState struct {
-	SubAgentEvents      map[int][]*agentEventWrapper
-	TypedSubAgentEvents any
+	SubAgentEvents map[int][]*agentEventWrapper
 }
 
 type loopWorkflowState struct {
@@ -160,8 +159,7 @@ func (a *workflowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...Ag
 
 // WorkflowInterruptInfo CheckpointSchema: persisted via InterruptInfo.Data (gob).
 type WorkflowInterruptInfo struct {
-	OrigInput      *AgentInput
-	TypedOrigInput any
+	OrigInput *AgentInput
 
 	SequentialInterruptIndex int
 	SequentialInterruptInfo  *InterruptInfo

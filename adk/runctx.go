@@ -43,9 +43,6 @@ type runSession struct {
 	// For M = *schema.Message, the existing Events field is used instead.
 	// The any type is required because Go does not support generic fields in non-generic structs.
 	TypedEvents any
-	// TypedLaneEvents stores *typedLaneEventsOf[M] for M != *schema.Message.
-	// Mirrors LaneEvents for the typed code path. See TypedEvents for rationale.
-	TypedLaneEvents any
 }
 
 // laneEvents CheckpointSchema: persisted via serialization.RunCtx (gob).
@@ -79,13 +76,6 @@ type typedAgentEventWrapper[M MessageType] struct {
 	TS                  int64
 	StreamErr           error
 }
-
-type typedLaneEventsOf[M MessageType] struct {
-	Events []*typedAgentEventWrapper[M]
-	Parent *typedLaneEventsOf[M]
-}
-
-func (g *typedLaneEventsOf[M]) len() int { return len(g.Events) }
 
 // typedAgentEventWrapperForGob is a gob-serializable representation of typedAgentEventWrapper.
 // We encode the event and TS separately to avoid the sync.Mutex and non-exported fields.
@@ -310,34 +300,18 @@ func addTypedEvent[M MessageType](session *runSession, event *TypedAgentEvent[M]
 		session.addEvent(any(event).(*AgentEvent))
 		return
 	}
+	session.mtx.Lock()
+	defer session.mtx.Unlock()
 	wrapper := &typedAgentEventWrapper[M]{event: event, TS: time.Now().UnixNano()}
-	if laneStore, ok := session.TypedLaneEvents.(*typedLaneEventsOf[M]); ok && laneStore != nil {
-		laneStore.Events = append(laneStore.Events, wrapper)
-		return
-	}
 	store, _ := session.TypedEvents.(*[]*typedAgentEventWrapper[M])
 	if store == nil {
 		s := make([]*typedAgentEventWrapper[M], 0)
 		store = &s
 		session.TypedEvents = store
 	}
-	session.mtx.Lock()
 	*store = append(*store, wrapper)
-	session.mtx.Unlock()
 }
 
-// getTypedEvents retrieves all typed agent events from a session, combining committed
-// events with in-flight lane events.
-//
-// Lane model overview:
-// When agents run in parallel (e.g., parallel sub-agents in a transfer), each branch
-// gets a "lane" — a child session created by forkTypedRunCtx that shares the parent's
-// committed event store but has its own local event slice (typedLaneEventsOf[M]).
-// Lanes form a linked list via Parent pointers. When a parallel join completes
-// (joinTypedRunCtxs), lane events are sorted by timestamp and committed to the parent.
-//
-// This function walks the lane chain from leaf to root, collecting events in reverse
-// (newest lane first), then prepends committed events, yielding chronological order.
 func getTypedEvents[M MessageType](session *runSession) []*typedAgentEventWrapper[M] {
 	var zero M
 	if _, ok := any(zero).(*schema.Message); ok {
@@ -357,44 +331,31 @@ func getTypedEvents[M MessageType](session *runSession) []*typedAgentEventWrappe
 		return result
 	}
 
-	store, _ := session.TypedEvents.(*[]*typedAgentEventWrapper[M])
+	session.mtx.Lock()
+	defer session.mtx.Unlock()
 
-	if session.TypedLaneEvents == nil {
-		if store == nil {
+	store, _ := session.TypedEvents.(*[]*typedAgentEventWrapper[M])
+	if store == nil {
+		if len(session.Events) == 0 {
 			return nil
 		}
-		session.mtx.Lock()
-		result := make([]*typedAgentEventWrapper[M], len(*store))
-		copy(result, *store)
-		session.mtx.Unlock()
+		result := make([]*typedAgentEventWrapper[M], 0, len(session.Events))
+		for _, e := range session.Events {
+			w := &typedAgentEventWrapper[M]{
+				event:     any(e.AgentEvent).(*TypedAgentEvent[M]),
+				TS:        e.TS,
+				StreamErr: e.StreamErr,
+			}
+			if e.concatenatedMessage != nil {
+				w.concatenatedMessage = any(e.concatenatedMessage).(M)
+			}
+			result = append(result, w)
+		}
 		return result
 	}
 
-	var committed []*typedAgentEventWrapper[M]
-	if store != nil {
-		session.mtx.Lock()
-		committed = make([]*typedAgentEventWrapper[M], len(*store))
-		copy(committed, *store)
-		session.mtx.Unlock()
-	}
-
-	var laneSlices [][]*typedAgentEventWrapper[M]
-	totalLaneSize := 0
-	for lane, ok := session.TypedLaneEvents.(*typedLaneEventsOf[M]); ok && lane != nil; lane, ok = any(lane.Parent).(*typedLaneEventsOf[M]) {
-		if len(lane.Events) > 0 {
-			laneSlices = append(laneSlices, lane.Events)
-			totalLaneSize += len(lane.Events)
-		}
-		if lane.Parent == nil {
-			break
-		}
-	}
-
-	result := make([]*typedAgentEventWrapper[M], 0, len(committed)+totalLaneSize)
-	result = append(result, committed...)
-	for i := len(laneSlices) - 1; i >= 0; i-- {
-		result = append(result, laneSlices[i]...)
-	}
+	result := make([]*typedAgentEventWrapper[M], len(*store))
+	copy(result, *store)
 	return result
 }
 
@@ -531,71 +492,6 @@ func joinRunCtxs(parentCtx context.Context, childCtxs ...context.Context) {
 	commitEvents(parentCtx, newEvents)
 }
 
-func joinTypedRunCtxs[M MessageType](parentCtx context.Context, childCtxs ...context.Context) {
-	var zero M
-	if _, ok := any(zero).(*schema.Message); ok {
-		joinRunCtxs(parentCtx, childCtxs...)
-		return
-	}
-	switch len(childCtxs) {
-	case 0:
-		return
-	case 1:
-		newEvents := unwindLaneEvents(childCtxs...)
-		commitEvents(parentCtx, newEvents)
-		newTypedEvents := unwindTypedLaneEvents[M](childCtxs...)
-		commitTypedEvents[M](parentCtx, newTypedEvents)
-		return
-	}
-	newEvents := unwindLaneEvents(childCtxs...)
-	sort.Slice(newEvents, func(i, j int) bool {
-		return newEvents[i].TS < newEvents[j].TS
-	})
-	commitEvents(parentCtx, newEvents)
-
-	newTypedEvents := unwindTypedLaneEvents[M](childCtxs...)
-	sort.Slice(newTypedEvents, func(i, j int) bool {
-		return newTypedEvents[i].TS < newTypedEvents[j].TS
-	})
-	commitTypedEvents[M](parentCtx, newTypedEvents)
-}
-
-func unwindTypedLaneEvents[M MessageType](ctxs ...context.Context) []*typedAgentEventWrapper[M] {
-	var allNewEvents []*typedAgentEventWrapper[M]
-	for _, ctx := range ctxs {
-		runCtx := getRunCtx(ctx)
-		if runCtx != nil && runCtx.Session != nil {
-			if gl, ok := runCtx.Session.TypedLaneEvents.(*typedLaneEventsOf[M]); ok && gl != nil {
-				allNewEvents = append(allNewEvents, gl.Events...)
-			}
-		}
-	}
-	return allNewEvents
-}
-
-func commitTypedEvents[M MessageType](ctx context.Context, newEvents []*typedAgentEventWrapper[M]) {
-	if len(newEvents) == 0 {
-		return
-	}
-	runCtx := getRunCtx(ctx)
-	if runCtx == nil || runCtx.Session == nil {
-		return
-	}
-	if gl, ok := runCtx.Session.TypedLaneEvents.(*typedLaneEventsOf[M]); ok && gl != nil {
-		gl.Events = append(gl.Events, newEvents...)
-	} else {
-		store, _ := runCtx.Session.TypedEvents.(*[]*typedAgentEventWrapper[M])
-		if store == nil {
-			s := make([]*typedAgentEventWrapper[M], 0)
-			store = &s
-			runCtx.Session.TypedEvents = store
-		}
-		runCtx.Session.mtx.Lock()
-		*store = append(*store, newEvents...)
-		runCtx.Session.mtx.Unlock()
-	}
-}
-
 // commitEvents appends a slice of new events to the correct parent lane or main event log.
 func commitEvents(ctx context.Context, newEvents []*agentEventWrapper) {
 	runCtx := getRunCtx(ctx)
@@ -657,43 +553,6 @@ func forkRunCtx(ctx context.Context) context.Context {
 	}
 	copy(childRunCtx.RunPath, parentRunCtx.RunPath)
 
-	return setRunCtx(ctx, childRunCtx)
-}
-
-func forkTypedRunCtx[M MessageType](ctx context.Context) context.Context {
-	var zero M
-	if _, ok := any(zero).(*schema.Message); ok {
-		return forkRunCtx(ctx)
-	}
-	parentRunCtx := getRunCtx(ctx)
-	if parentRunCtx == nil || parentRunCtx.Session == nil {
-		return ctx
-	}
-	childSession := &runSession{
-		Events:      parentRunCtx.Session.Events,
-		TypedEvents: parentRunCtx.Session.TypedEvents,
-		Values:      parentRunCtx.Session.Values,
-		valuesMtx:   parentRunCtx.Session.valuesMtx,
-	}
-	childSession.LaneEvents = &laneEvents{
-		Parent: parentRunCtx.Session.LaneEvents,
-		Events: make([]*agentEventWrapper, 0),
-	}
-	var parentTypedLane *typedLaneEventsOf[M]
-	if gl, ok := parentRunCtx.Session.TypedLaneEvents.(*typedLaneEventsOf[M]); ok {
-		parentTypedLane = gl
-	}
-	childSession.TypedLaneEvents = &typedLaneEventsOf[M]{
-		Parent: parentTypedLane,
-		Events: make([]*typedAgentEventWrapper[M], 0),
-	}
-	childRunCtx := &runContext{
-		RootInput:      parentRunCtx.RootInput,
-		TypedRootInput: parentRunCtx.TypedRootInput,
-		RunPath:        make([]RunStep, len(parentRunCtx.RunPath)),
-		Session:        childSession,
-	}
-	copy(childRunCtx.RunPath, parentRunCtx.RunPath)
 	return setRunCtx(ctx, childRunCtx)
 }
 

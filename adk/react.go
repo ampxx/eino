@@ -46,6 +46,10 @@ type typedState[M MessageType] struct {
 	RetryAttempt             int
 }
 
+// State is the internal state of the ChatModelAgent.
+//
+// Deprecated: State is exported only for checkpoint backward compatibility.
+// Do not use it directly.
 type State = typedState[*schema.Message]
 
 type agenticState = typedState[*schema.AgenticMessage]
@@ -82,14 +86,9 @@ func init() {
 	gob.Register(&AgentEvent{})
 	gob.Register(int(0))
 
-	schema.RegisterName[*AgentInput]("_eino_adk_agent_input")
 	schema.RegisterName[*TypedAgentInput[*schema.AgenticMessage]]("_eino_adk_agentic_agent_input")
 	schema.RegisterName[*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper")
 	schema.RegisterName[*[]*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper_slice")
-	schema.RegisterName[*typedLaneEventsOf[*schema.AgenticMessage]]("_eino_adk_agentic_lane_events")
-	schema.RegisterName[map[int][]*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper_map")
-	schema.RegisterName[*schema.AgenticMessage]("_eino_adk_agentic_message")
-	schema.RegisterName[[]*schema.AgenticMessage]("_eino_adk_agentic_message_slice")
 	schema.RegisterName[*reactInput]("_eino_adk_react_input")
 	schema.RegisterName[*agenticReactInput]("_eino_adk_agentic_react_input")
 }

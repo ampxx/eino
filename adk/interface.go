@@ -400,6 +400,7 @@ func concatMessageStream[M MessageType](stream *schema.StreamReader[M]) (M, erro
 		}
 		return any(result).(M), nil
 	case *schema.StreamReader[*schema.AgenticMessage]:
+		defer s.Close()
 		var msgs []*schema.AgenticMessage
 		for {
 			frame, err := s.Recv()

@@ -1212,3 +1212,30 @@ func TestCoverage_ConsumeStream_Idempotent(t *testing.T) {
 
 	assert.Equal(t, msg1, msg2, "second call should be no-op")
 }
+
+func TestAgenticReactHistory_EmptyMessages(t *testing.T) {
+	g := compose.NewGraph[string, []*schema.AgenticMessage](compose.WithGenLocalState(func(ctx context.Context) (state *typedState[*schema.AgenticMessage]) {
+		return &typedState[*schema.AgenticMessage]{
+			Messages: []*schema.AgenticMessage{},
+		}
+	}))
+	require.NoError(t, g.AddLambdaNode("1", compose.InvokableLambda(func(ctx context.Context, input string) (output []*schema.AgenticMessage, err error) {
+		return getAgenticReactChatHistory(ctx, "DestAgent")
+	})))
+	require.NoError(t, g.AddEdge(compose.START, "1"))
+	require.NoError(t, g.AddEdge("1", compose.END))
+
+	ctx := context.Background()
+	ctx, _ = initRunCtx(ctx, "MyAgent", nil)
+	runner, err := g.Compile(ctx)
+	require.NoError(t, err)
+
+	require.NotPanics(t, func() {
+		result, err := runner.Invoke(ctx, "")
+		if err != nil {
+			t.Logf("Got error (acceptable): %v", err)
+			return
+		}
+		t.Logf("Got %d messages", len(result))
+	}, "BUG: getAgenticReactChatHistory should not panic with empty Messages slice")
+}

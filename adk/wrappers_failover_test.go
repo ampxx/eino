@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cloudwego/eino/components/model"
@@ -178,4 +179,37 @@ func TestStateModelWrapper_Stream_WithFailover(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&m1Calls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&m2Calls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&shouldCalls))
+}
+
+func TestFailoverRejectsAgenticAgent(t *testing.T) {
+	ctx := context.Background()
+
+	m := &mockAgenticModel{
+		generateFn: func(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.AgenticMessage, error) {
+			return agenticMsg("ok"), nil
+		},
+	}
+
+	fallbackModel := &mockChatModelForAttack{
+		generateFn: func(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+			return schema.AssistantMessage("fallback", nil), nil
+		},
+	}
+
+	_, err := NewTypedChatModelAgent[*schema.AgenticMessage](ctx, &TypedChatModelAgentConfig[*schema.AgenticMessage]{
+		Name:        "FailoverAgent",
+		Description: "Agent with failover config",
+		Model:       m,
+		ModelFailoverConfig: &ModelFailoverConfig{
+			MaxRetries: 1,
+			ShouldFailover: func(ctx context.Context, outputMessage *schema.Message, outputErr error) bool {
+				return true
+			},
+			GetFailoverModel: func(ctx context.Context, failoverCtx *FailoverContext) (model.BaseChatModel, []*schema.Message, error) {
+				return fallbackModel, nil, nil
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ModelFailoverConfig is only supported for *schema.Message agents")
 }

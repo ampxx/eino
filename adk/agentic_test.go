@@ -883,25 +883,19 @@ func TestAgenticTransferToAgentWithDesignatedCallback(t *testing.T) {
 		events = append(events, event)
 	}
 
-	assert.Len(t, events, 3)
+	require.Len(t, events, 3)
 
-	var foundTransfer bool
-	var foundChildOutput bool
-	for _, event := range events {
-		if event.Action != nil && event.Action.TransferToAgent != nil {
-			foundTransfer = true
-			assert.Equal(t, "ChildAgent", event.Action.TransferToAgent.DestAgentName)
-		}
-		if event.Output != nil && event.Output.MessageOutput != nil && event.Output.MessageOutput.Message != nil {
-			msg := event.Output.MessageOutput.Message
-			if len(msg.ContentBlocks) > 0 && msg.ContentBlocks[0].AssistantGenText != nil &&
-				msg.ContentBlocks[0].AssistantGenText.Text == "Hello from child agent" {
-				foundChildOutput = true
-			}
-		}
-	}
-	assert.True(t, foundTransfer)
-	assert.True(t, foundChildOutput)
+	require.NotNil(t, events[1].Action)
+	require.NotNil(t, events[1].Action.TransferToAgent)
+	assert.Equal(t, "ChildAgent", events[1].Action.TransferToAgent.DestAgentName)
+
+	require.NotNil(t, events[2].Output)
+	require.NotNil(t, events[2].Output.MessageOutput)
+	require.NotNil(t, events[2].Output.MessageOutput.Message)
+	msg := events[2].Output.MessageOutput.Message
+	require.NotEmpty(t, msg.ContentBlocks)
+	require.NotNil(t, msg.ContentBlocks[0].AssistantGenText)
+	assert.Equal(t, "Hello from child agent", msg.ContentBlocks[0].AssistantGenText.Text)
 }
 
 func TestAgenticSequentialAgent(t *testing.T) {
@@ -2020,24 +2014,18 @@ func TestCoverage_GenAgenticTransferMessages(t *testing.T) {
 	assert.Equal(t, schema.AgenticRoleTypeAssistant, aMsg.Role)
 	assert.Equal(t, schema.AgenticRoleTypeUser, tMsg.Role)
 
-	var hasToolCall bool
-	for _, block := range aMsg.ContentBlocks {
-		if block.Type == schema.ContentBlockTypeFunctionToolCall {
-			hasToolCall = true
-			assert.Equal(t, TransferToAgentToolName, block.FunctionToolCall.Name)
-		}
-	}
-	assert.True(t, hasToolCall)
+	require.NotEmpty(t, aMsg.ContentBlocks)
+	toolCallBlock := aMsg.ContentBlocks[0]
+	assert.Equal(t, schema.ContentBlockTypeFunctionToolCall, toolCallBlock.Type)
+	require.NotNil(t, toolCallBlock.FunctionToolCall)
+	assert.Equal(t, TransferToAgentToolName, toolCallBlock.FunctionToolCall.Name)
 
-	var hasToolResult bool
-	for _, block := range tMsg.ContentBlocks {
-		if block.Type == schema.ContentBlockTypeFunctionToolResult {
-			hasToolResult = true
-			assert.Equal(t, TransferToAgentToolName, block.FunctionToolResult.Name)
-			assert.Contains(t, block.FunctionToolResult.Result, "target-agent")
-		}
-	}
-	assert.True(t, hasToolResult)
+	require.NotEmpty(t, tMsg.ContentBlocks)
+	toolResultBlock := tMsg.ContentBlocks[0]
+	assert.Equal(t, schema.ContentBlockTypeFunctionToolResult, toolResultBlock.Type)
+	require.NotNil(t, toolResultBlock.FunctionToolResult)
+	assert.Equal(t, TransferToAgentToolName, toolResultBlock.FunctionToolResult.Name)
+	assert.Contains(t, toolResultBlock.FunctionToolResult.Result, "target-agent")
 }
 
 func TestCoverage_FlowAgent_HistoryRewriter(t *testing.T) {
@@ -2081,15 +2069,11 @@ func TestCoverage_FlowAgent_HistoryRewriter(t *testing.T) {
 		}
 	}
 
-	found := false
-	for _, msg := range receivedMessages {
-		for _, b := range msg.ContentBlocks {
-			if b.UserInputText != nil && b.UserInputText.Text == "injected by rewriter" {
-				found = true
-			}
-		}
-	}
-	assert.True(t, found, "history rewriter should inject messages")
+	require.NotEmpty(t, receivedMessages, "history rewriter should inject messages")
+	lastMsg := receivedMessages[len(receivedMessages)-1]
+	require.NotEmpty(t, lastMsg.ContentBlocks)
+	require.NotNil(t, lastMsg.ContentBlocks[0].UserInputText)
+	assert.Equal(t, "injected by rewriter", lastMsg.ContentBlocks[0].UserInputText.Text)
 }
 
 func TestCoverage_ChatModelAgent_ModelGenerateError(t *testing.T) {

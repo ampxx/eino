@@ -561,7 +561,7 @@ func TestAgenticIntegration_DeterministicTransfer(t *testing.T) {
 	})
 	iter := runner.Query(ctx, "start dt")
 
-	var transferFound bool
+	var transferEvent *TypedAgentEvent[*schema.AgenticMessage]
 	var outputs []string
 	for {
 		event, ok := iter.Next()
@@ -572,14 +572,14 @@ func TestAgenticIntegration_DeterministicTransfer(t *testing.T) {
 			t.Fatalf("unexpected error: %v", event.Err)
 		}
 		if event.Action != nil && event.Action.TransferToAgent != nil {
-			transferFound = true
+			transferEvent = event
 		}
 		if event.Output != nil && event.Output.MessageOutput != nil && event.Output.MessageOutput.Message != nil {
 			outputs = append(outputs, agenticTextContent(event.Output.MessageOutput.Message))
 		}
 	}
 
-	require.True(t, transferFound, "transfer event should be emitted")
+	require.NotNil(t, transferEvent, "transfer event should be emitted")
 	assert.Contains(t, outputs, "outer message")
 	assert.Contains(t, outputs, "inner completed")
 }
@@ -804,21 +804,21 @@ func TestAgenticIntegration_WorkflowWithoutInterrupt(t *testing.T) {
 		iter := runner.Query(ctx, "exit test")
 
 		var outputs []string
-		var exitFound bool
+		var exitEvent *TypedAgentEvent[*schema.AgenticMessage]
 		for {
 			event, ok := iter.Next()
 			if !ok {
 				break
 			}
 			if event.Action != nil && event.Action.Exit {
-				exitFound = true
+				exitEvent = event
 			}
 			if event.Output != nil && event.Output.MessageOutput != nil && event.Output.MessageOutput.Message != nil {
 				outputs = append(outputs, agenticTextContent(event.Output.MessageOutput.Message))
 			}
 		}
 
-		assert.True(t, exitFound)
+		require.NotNil(t, exitEvent, "exit event should be emitted")
 		assert.Contains(t, outputs, "exit output")
 		assert.NotContains(t, outputs, "sa2 out")
 	})

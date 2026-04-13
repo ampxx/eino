@@ -165,17 +165,11 @@ func TestAgenticCallback(t *testing.T) {
 		received := recorder.getEventsReceived()
 		require.NotEmpty(t, received, "Callback should receive events")
 
-		var foundExpectedContent bool
-		for _, event := range received {
-			if event.Output != nil && event.Output.MessageOutput != nil {
-				msg := event.Output.MessageOutput.Message
-				if msg != nil && agenticTextContent(msg) == expectedContent {
-					foundExpectedContent = true
-					break
-				}
-			}
-		}
-		require.True(t, foundExpectedContent, "Callback events should contain the expected content")
+		require.Len(t, received, 1, "Callback should receive exactly 1 event")
+		require.NotNil(t, received[0].Output)
+		require.NotNil(t, received[0].Output.MessageOutput)
+		require.NotNil(t, received[0].Output.MessageOutput.Message)
+		assert.Equal(t, expectedContent, agenticTextContent(received[0].Output.MessageOutput.Message))
 	})
 }
 
@@ -279,19 +273,12 @@ func TestAgenticCallbackWithSequentialWorkflow(t *testing.T) {
 		}
 	}
 
-	assert.NotEmpty(t, callbackInfos, "OnStart should be called for agents")
-	foundAgent1 := false
-	foundAgent2 := false
+	agentNames := make(map[string]bool)
 	for _, info := range callbackInfos {
-		if info.Name == "Agent1" {
-			foundAgent1 = true
-		}
-		if info.Name == "Agent2" {
-			foundAgent2 = true
-		}
+		agentNames[info.Name] = true
 	}
-	assert.True(t, foundAgent1, "Agent1 callback should be invoked")
-	assert.True(t, foundAgent2, "Agent2 callback should be invoked")
+	assert.True(t, agentNames["Agent1"], "Agent1 callback should be invoked")
+	assert.True(t, agentNames["Agent2"], "Agent2 callback should be invoked")
 }
 
 func TestCoverage_FlowAgent_RunWithCallbacksAndSubAgents(t *testing.T) {

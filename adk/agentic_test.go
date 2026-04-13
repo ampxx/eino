@@ -1616,33 +1616,6 @@ func TestCoverage_GenAgenticErrorIter(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestCoverage_TypedSendTransferEvents_Agentic(t *testing.T) {
-	iter, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.AgenticMessage]]()
-	go func() {
-		typedSendTransferEvents(gen, []string{"agent-b", "agent-c"})
-		gen.Close()
-	}()
-
-	var events []*TypedAgentEvent[*schema.AgenticMessage]
-	for {
-		event, ok := iter.Next()
-		if !ok {
-			break
-		}
-		events = append(events, event)
-	}
-
-	require.Len(t, events, 4)
-	assert.NotNil(t, events[0].Output)
-	require.NotNil(t, events[1].Action)
-	require.NotNil(t, events[1].Action.TransferToAgent)
-	assert.Equal(t, "agent-b", events[1].Action.TransferToAgent.DestAgentName)
-	assert.NotNil(t, events[2].Output)
-	require.NotNil(t, events[3].Action)
-	require.NotNil(t, events[3].Action.TransferToAgent)
-	assert.Equal(t, "agent-c", events[3].Action.TransferToAgent.DestAgentName)
-}
-
 func TestCoverage_ChatModelAgent_OnSetSubAgents_FrozenError(t *testing.T) {
 	ctx := context.Background()
 
@@ -1811,7 +1784,7 @@ func TestCoverage_TypedGetMessage_AgenticStreaming(t *testing.T) {
 	result, retEvent, err := TypedGetMessage(event)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.NotNil(t, retEvent)
+	require.NotNil(t, retEvent)
 	assert.NotNil(t, retEvent.Output.MessageOutput.MessageStream)
 }
 
@@ -2185,7 +2158,7 @@ func TestCoverage_TypedEndpointModel_WithEndpoints(t *testing.T) {
 
 	stream, err := m.Stream(ctx, nil)
 	assert.NoError(t, err)
-	assert.NotNil(t, stream)
+	require.NotNil(t, stream)
 	msg, err := stream.Recv()
 	assert.NoError(t, err)
 	assert.Equal(t, expected, msg)
@@ -2210,4 +2183,21 @@ func TestCoverage_SetAutomaticClose(t *testing.T) {
 	}
 
 	typedSetAutomaticClose(event)
+}
+
+func TestConcatMessageStream_AgenticClosesStream(t *testing.T) {
+	r, w := schema.Pipe[*schema.AgenticMessage](2)
+	go func() {
+		defer w.Close()
+		w.Send(agenticMsg("a"), nil)
+		w.Send(agenticMsg("b"), nil)
+	}()
+
+	result, err := concatMessageStream(r)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	_, recvErr := r.Recv()
+	assert.Error(t, recvErr,
+		"stream should be closed after concatMessageStream returns")
 }

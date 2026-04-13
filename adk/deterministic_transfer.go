@@ -29,130 +29,120 @@ import (
 
 func init() {
 	schema.RegisterName[*deterministicTransferState]("_eino_adk_deterministic_transfer_state")
-	schema.RegisterName[*typedDeterministicTransferState[*schema.AgenticMessage]]("_eino_adk_generic_deterministic_transfer_state_agentic")
 }
 
 type deterministicTransferState struct {
 	EventList []*agentEventWrapper
 }
 
-type typedDeterministicTransferState[M MessageType] struct {
-	EventList []*typedAgentEventWrapper[M]
-}
-
-// typedAgentWithDeterministicTransferTo wraps a TypedAgent with deterministic transfer logic to specified agents.
-func typedAgentWithDeterministicTransferTo[M MessageType](_ context.Context, config *typedDeterministicTransferConfig[M]) TypedAgent[M] {
-	if ra, ok := config.Agent.(TypedResumableAgent[M]); ok {
-		return &resumableDeterministicTransferWrapper[M]{
+// AgentWithDeterministicTransferTo wraps an agent to transfer to given agents deterministically.
+func AgentWithDeterministicTransferTo(_ context.Context, config *DeterministicTransferConfig) Agent {
+	if ra, ok := config.Agent.(ResumableAgent); ok {
+		return &resumableAgentWithDeterministicTransferTo{
 			agent:        ra,
 			toAgentNames: config.ToAgentNames,
 		}
 	}
-	return &deterministicTransferWrapper[M]{
+	return &agentWithDeterministicTransferTo{
 		agent:        config.Agent,
 		toAgentNames: config.ToAgentNames,
 	}
 }
 
-// AgentWithDeterministicTransferTo wraps an Agent with deterministic transfer logic to specified agents.
-func AgentWithDeterministicTransferTo(_ context.Context, config *DeterministicTransferConfig) Agent {
-	return typedAgentWithDeterministicTransferTo[*schema.Message](context.Background(), config)
-}
-
-type deterministicTransferWrapper[M MessageType] struct {
-	agent        TypedAgent[M]
+type agentWithDeterministicTransferTo struct {
+	agent        Agent
 	toAgentNames []string
 }
 
-func (a *deterministicTransferWrapper[M]) Description(ctx context.Context) string {
+func (a *agentWithDeterministicTransferTo) Description(ctx context.Context) string {
 	return a.agent.Description(ctx)
 }
 
-func (a *deterministicTransferWrapper[M]) Name(ctx context.Context) string {
+func (a *agentWithDeterministicTransferTo) Name(ctx context.Context) string {
 	return a.agent.Name(ctx)
 }
 
-func (a *deterministicTransferWrapper[M]) GetType() string {
+func (a *agentWithDeterministicTransferTo) GetType() string {
 	if typer, ok := a.agent.(components.Typer); ok {
 		return typer.GetType()
 	}
 	return "DeterministicTransfer"
 }
 
-func (a *deterministicTransferWrapper[M]) Run(ctx context.Context,
-	input *TypedAgentInput[M], options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func (a *agentWithDeterministicTransferTo) Run(ctx context.Context,
+	input *AgentInput, options ...AgentRunOption) *AsyncIterator[*AgentEvent] {
 
-	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
-		return typedRunFlowAgentWithIsolatedSession(ctx, fa, input, a.toAgentNames, options...)
+	if fa, ok := a.agent.(*flowAgent); ok {
+		return runFlowAgentWithIsolatedSession(ctx, fa, input, a.toAgentNames, options...)
 	}
 
 	aIter := a.agent.Run(ctx, input, options...)
 
-	iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go typedForwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
+	iterator, generator := NewAsyncIteratorPair[*AgentEvent]()
+	go forwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
 
 	return iterator
 }
 
-type resumableDeterministicTransferWrapper[M MessageType] struct {
-	agent        TypedResumableAgent[M]
+type resumableAgentWithDeterministicTransferTo struct {
+	agent        ResumableAgent
 	toAgentNames []string
 }
 
-func (a *resumableDeterministicTransferWrapper[M]) Description(ctx context.Context) string {
+func (a *resumableAgentWithDeterministicTransferTo) Description(ctx context.Context) string {
 	return a.agent.Description(ctx)
 }
 
-func (a *resumableDeterministicTransferWrapper[M]) Name(ctx context.Context) string {
+func (a *resumableAgentWithDeterministicTransferTo) Name(ctx context.Context) string {
 	return a.agent.Name(ctx)
 }
 
-func (a *resumableDeterministicTransferWrapper[M]) GetType() string {
+func (a *resumableAgentWithDeterministicTransferTo) GetType() string {
 	if typer, ok := a.agent.(components.Typer); ok {
 		return typer.GetType()
 	}
 	return "DeterministicTransfer"
 }
 
-func (a *resumableDeterministicTransferWrapper[M]) Run(ctx context.Context,
-	input *TypedAgentInput[M], options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func (a *resumableAgentWithDeterministicTransferTo) Run(ctx context.Context,
+	input *AgentInput, options ...AgentRunOption) *AsyncIterator[*AgentEvent] {
 
-	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
-		return typedRunFlowAgentWithIsolatedSession(ctx, fa, input, a.toAgentNames, options...)
+	if fa, ok := a.agent.(*flowAgent); ok {
+		return runFlowAgentWithIsolatedSession(ctx, fa, input, a.toAgentNames, options...)
 	}
 
 	aIter := a.agent.Run(ctx, input, options...)
 
-	iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go typedForwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
+	iterator, generator := NewAsyncIteratorPair[*AgentEvent]()
+	go forwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
 
 	return iterator
 }
 
-func (a *resumableDeterministicTransferWrapper[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
-	if fa, ok := a.agent.(*typedFlowAgent[M]); ok {
-		return typedResumeFlowAgentWithIsolatedSession[M](ctx, fa, info, a.toAgentNames, opts...)
+func (a *resumableAgentWithDeterministicTransferTo) Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*AgentEvent] {
+	if fa, ok := a.agent.(*flowAgent); ok {
+		return resumeFlowAgentWithIsolatedSession(ctx, fa, info, a.toAgentNames, opts...)
 	}
 
 	aIter := a.agent.Resume(ctx, info, opts...)
 
-	iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go typedForwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
+	iterator, generator := NewAsyncIteratorPair[*AgentEvent]()
+	go forwardEventsAndAppendTransfer(aIter, generator, a.toAgentNames)
 
 	return iterator
 }
 
-func typedForwardEventsAndAppendTransfer[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M]],
-	generator *AsyncGenerator[*TypedAgentEvent[M]], toAgentNames []string) {
+func forwardEventsAndAppendTransfer(iter *AsyncIterator[*AgentEvent],
+	generator *AsyncGenerator[*AgentEvent], toAgentNames []string) {
 
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
-			generator.Send(&TypedAgentEvent[M]{Err: safe.NewPanicErr(panicErr, debug.Stack())})
+			generator.Send(&AgentEvent{Err: safe.NewPanicErr(panicErr, debug.Stack())})
 		}
 		generator.Close()
 	}()
 
-	var lastEvent *TypedAgentEvent[M]
+	var lastEvent *AgentEvent
 	for {
 		event, ok := iter.Next()
 		if !ok {
@@ -166,11 +156,11 @@ func typedForwardEventsAndAppendTransfer[M MessageType](iter *AsyncIterator[*Typ
 		return
 	}
 
-	typedSendTransferEvents(generator, toAgentNames)
+	sendTransferEvents(generator, toAgentNames)
 }
 
-func typedRunFlowAgentWithIsolatedSession[M MessageType](ctx context.Context, fa *typedFlowAgent[M], input *TypedAgentInput[M],
-	toAgentNames []string, options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func runFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, input *AgentInput,
+	toAgentNames []string, options ...AgentRunOption) *AsyncIterator[*AgentEvent] {
 
 	parentSession := getSession(ctx)
 	parentRunCtx := getRunCtx(ctx)
@@ -194,67 +184,28 @@ func typedRunFlowAgentWithIsolatedSession[M MessageType](ctx context.Context, fa
 
 	iter := fa.Run(ctx, input, options...)
 
-	iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go typedHandleFlowAgentEvents(ctx, iter, generator, isolatedSession, parentSession, toAgentNames)
+	iterator, generator := NewAsyncIteratorPair[*AgentEvent]()
+	go handleFlowAgentEvents(ctx, iter, generator, isolatedSession, parentSession, toAgentNames)
 
 	return iterator
 }
 
-func typedResumeFlowAgentWithIsolatedSession[M MessageType](ctx context.Context, fa *typedFlowAgent[M], info *ResumeInfo,
-	toAgentNames []string, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func resumeFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, info *ResumeInfo,
+	toAgentNames []string, opts ...AgentRunOption) *AsyncIterator[*AgentEvent] {
 
-	var zero M
-	if _, ok := any(zero).(*schema.Message); ok {
-		state, ok := info.InterruptState.(*deterministicTransferState)
-		if !ok || state == nil {
-			return typedErrorIter[M](errors.New("invalid interrupt state for flowAgent resume in deterministic transfer"))
-		}
-
-		parentSession := getSession(ctx)
-		parentRunCtx := getRunCtx(ctx)
-
-		isolatedSession := &runSession{
-			Values:    parentSession.Values,
-			valuesMtx: parentSession.valuesMtx,
-			Events:    state.EventList,
-		}
-		if isolatedSession.valuesMtx == nil {
-			isolatedSession.valuesMtx = &sync.Mutex{}
-		}
-		if isolatedSession.Values == nil {
-			isolatedSession.Values = make(map[string]any)
-		}
-
-		ctx = setRunCtx(ctx, &runContext{
-			Session:   isolatedSession,
-			RootInput: parentRunCtx.RootInput,
-			RunPath:   parentRunCtx.RunPath,
-		})
-
-		iter := fa.Resume(ctx, info, opts...)
-
-		iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-		go typedHandleFlowAgentEvents(ctx, iter, generator, isolatedSession, parentSession, toAgentNames)
-		return iterator
-	}
-
-	state, ok := info.InterruptState.(*typedDeterministicTransferState[M])
+	state, ok := info.InterruptState.(*deterministicTransferState)
 	if !ok || state == nil {
-		return typedErrorIter[M](errors.New("invalid interrupt state for flowAgent resume in deterministic transfer"))
+		return genErrorIter(errors.New("invalid interrupt state for flowAgent resume in deterministic transfer"))
 	}
 
 	parentSession := getSession(ctx)
 	parentRunCtx := getRunCtx(ctx)
 
-	eventsSlice := state.EventList
 	isolatedSession := &runSession{
 		Values:    parentSession.Values,
 		valuesMtx: parentSession.valuesMtx,
+		Events:    state.EventList,
 	}
-	s := make([]*typedAgentEventWrapper[M], len(eventsSlice))
-	copy(s, eventsSlice)
-	isolatedSession.TypedEvents = &s
-
 	if isolatedSession.valuesMtx == nil {
 		isolatedSession.valuesMtx = &sync.Mutex{}
 	}
@@ -270,23 +221,23 @@ func typedResumeFlowAgentWithIsolatedSession[M MessageType](ctx context.Context,
 
 	iter := fa.Resume(ctx, info, opts...)
 
-	iterator, generator := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go typedHandleFlowAgentEvents(ctx, iter, generator, isolatedSession, parentSession, toAgentNames)
+	iterator, generator := NewAsyncIteratorPair[*AgentEvent]()
+	go handleFlowAgentEvents(ctx, iter, generator, isolatedSession, parentSession, toAgentNames)
 
 	return iterator
 }
 
-func typedHandleFlowAgentEvents[M MessageType](ctx context.Context, iter *AsyncIterator[*TypedAgentEvent[M]],
-	generator *AsyncGenerator[*TypedAgentEvent[M]], isolatedSession, parentSession *runSession, toAgentNames []string) {
+func handleFlowAgentEvents(ctx context.Context, iter *AsyncIterator[*AgentEvent],
+	generator *AsyncGenerator[*AgentEvent], isolatedSession, parentSession *runSession, toAgentNames []string) {
 
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
-			generator.Send(&TypedAgentEvent[M]{Err: safe.NewPanicErr(panicErr, debug.Stack())})
+			generator.Send(&AgentEvent{Err: safe.NewPanicErr(panicErr, debug.Stack())})
 		}
 		generator.Close()
 	}()
 
-	var lastEvent *TypedAgentEvent[M]
+	var lastEvent *AgentEvent
 
 	for {
 		event, ok := iter.Next()
@@ -295,10 +246,10 @@ func typedHandleFlowAgentEvents[M MessageType](ctx context.Context, iter *AsyncI
 		}
 
 		if parentSession != nil && (event.Action == nil || event.Action.Interrupted == nil) {
-			copied := copyTypedAgentEvent(event)
-			typedSetAutomaticClose(copied)
-			typedSetAutomaticClose(event)
-			addTypedEvent(parentSession, copied)
+			copied := copyAgentEvent(event)
+			setAutomaticClose(copied)
+			setAutomaticClose(event)
+			parentSession.addEvent(copied)
 		}
 
 		if event.Action != nil && event.Action.internalInterrupted != nil {
@@ -312,17 +263,10 @@ func typedHandleFlowAgentEvents[M MessageType](ctx context.Context, iter *AsyncI
 
 	if lastEvent != nil && lastEvent.Action != nil {
 		if lastEvent.Action.internalInterrupted != nil {
-			var interruptState any
-			var zero M
-			if _, ok := any(zero).(*schema.Message); ok {
-				events := isolatedSession.getEvents()
-				interruptState = &deterministicTransferState{EventList: events}
-			} else {
-				events := getTypedEvents[M](isolatedSession)
-				interruptState = &typedDeterministicTransferState[M]{EventList: events}
-			}
-			compositeEvent := TypedCompositeInterrupt[M](ctx, "deterministic transfer wrapper interrupted",
-				interruptState, lastEvent.Action.internalInterrupted)
+			events := isolatedSession.getEvents()
+			state := &deterministicTransferState{EventList: events}
+			compositeEvent := CompositeInterrupt(ctx, "deterministic transfer wrapper interrupted",
+				state, lastEvent.Action.internalInterrupted)
 			generator.Send(compositeEvent)
 			return
 		}
@@ -332,36 +276,17 @@ func typedHandleFlowAgentEvents[M MessageType](ctx context.Context, iter *AsyncI
 		}
 	}
 
-	typedSendTransferEvents(generator, toAgentNames)
+	sendTransferEvents(generator, toAgentNames)
 }
 
-func typedSendTransferEvents[M MessageType](generator *AsyncGenerator[*TypedAgentEvent[M]], toAgentNames []string) {
-	var zero M
-	if _, ok := any(zero).(*schema.Message); ok {
-		for _, toAgentName := range toAgentNames {
-			aMsg, tMsg := GenTransferMessages(context.Background(), toAgentName)
-
-			aEvent := TypedEventFromMessage(aMsg, nil, schema.Assistant, "")
-			generator.Send(any(aEvent).(*TypedAgentEvent[M]))
-
-			tEvent := TypedEventFromMessage(tMsg, nil, schema.Tool, tMsg.ToolName)
-			tEvent.Action = &AgentAction{
-				TransferToAgent: &TransferToAgentAction{
-					DestAgentName: toAgentName,
-				},
-			}
-			generator.Send(any(tEvent).(*TypedAgentEvent[M]))
-		}
-		return
-	}
-
+func sendTransferEvents(generator *AsyncGenerator[*AgentEvent], toAgentNames []string) {
 	for _, toAgentName := range toAgentNames {
-		aMsg, tMsg := genAgenticTransferMessages(toAgentName)
+		aMsg, tMsg := GenTransferMessages(context.Background(), toAgentName)
 
-		aEvent := TypedEventFromMessage[M](any(aMsg).(M), nil, schema.Assistant, "")
+		aEvent := EventFromMessage(aMsg, nil, schema.Assistant, "")
 		generator.Send(aEvent)
 
-		tEvent := TypedEventFromMessage[M](any(tMsg).(M), nil, schema.Tool, TransferToAgentToolName)
+		tEvent := EventFromMessage(tMsg, nil, schema.Tool, tMsg.ToolName)
 		tEvent.Action = &AgentAction{
 			TransferToAgent: &TransferToAgentAction{
 				DestAgentName: toAgentName,

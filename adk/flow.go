@@ -610,12 +610,10 @@ func (a *typedFlowAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts .
 	return wrapIterWithCancelCtx(typedWrapIterWithOnEnd(ctx, innerIter), cancelCtx)
 }
 
-type typedDeterministicTransferConfig[M MessageType] struct {
-	Agent        TypedAgent[M]
+type DeterministicTransferConfig struct {
+	Agent        Agent
 	ToAgentNames []string
 }
-
-type DeterministicTransferConfig = typedDeterministicTransferConfig[*schema.Message]
 
 func (a *typedFlowAgent[M]) run(
 	ctx context.Context,

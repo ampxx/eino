@@ -98,24 +98,6 @@ func GenTransferMessages(_ context.Context, destAgentName string) (Message, Mess
 	return assistantMessage, toolMessage
 }
 
-func genAgenticTransferMessages(destAgentName string) (*schema.AgenticMessage, *schema.AgenticMessage) {
-	toolCallID := uuid.NewString()
-	assistantMsg := &schema.AgenticMessage{
-		Role: schema.AgenticRoleTypeAssistant,
-		ContentBlocks: []*schema.ContentBlock{
-			schema.NewContentBlock(&schema.FunctionToolCall{
-				CallID:    toolCallID,
-				Name:      TransferToAgentToolName,
-				Arguments: destAgentName,
-			}),
-		},
-	}
-	toolResultMsg := schema.FunctionToolResultAgenticMessage(
-		toolCallID, TransferToAgentToolName, transferToAgentToolOutput(destAgentName),
-	)
-	return assistantMsg, toolResultMsg
-}
-
 func typedSetAutomaticClose[M MessageType](e *TypedAgentEvent[M]) {
 	if e.Output == nil || e.Output.MessageOutput == nil || !e.Output.MessageOutput.IsStreaming {
 		return

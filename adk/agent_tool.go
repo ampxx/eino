@@ -172,7 +172,7 @@ func (at *typedAgentTool[M]) InvokableRun(ctx context.Context, argumentsInJSON s
 				}
 				input = any(msgInput).([]M)
 			case *schema.AgenticMessage:
-				agenticInput, histErr := getAgenticReactChatHistory(ctx, at.agent.Name(ctx))
+				agenticInput, histErr := getAgenticReactChatHistory(ctx)
 				if histErr != nil {
 					return "", histErr
 				}
@@ -373,7 +373,7 @@ func getReactChatHistory(ctx context.Context, destAgentName string) ([]Message, 
 	return history, nil
 }
 
-func getAgenticReactChatHistory(ctx context.Context, destAgentName string) ([]*schema.AgenticMessage, error) {
+func getAgenticReactChatHistory(ctx context.Context) ([]*schema.AgenticMessage, error) {
 	var messages []*schema.AgenticMessage
 	err := compose.ProcessState(ctx, func(ctx context.Context, st *typedState[*schema.AgenticMessage]) error {
 		if len(st.Messages) == 0 {
@@ -392,8 +392,6 @@ func getAgenticReactChatHistory(ctx context.Context, destAgentName string) ([]*s
 		agentName = runCtx.RunPath[len(runCtx.RunPath)-1].agentName
 	}
 
-	a, t := genAgenticTransferMessages(destAgentName)
-	messages = append(messages, a, t)
 	history := make([]*schema.AgenticMessage, 0, len(messages))
 	for _, msg := range messages {
 		if msg.Role == schema.AgenticRoleTypeSystem {

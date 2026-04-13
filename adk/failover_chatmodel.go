@@ -32,10 +32,10 @@ import (
 type failoverCurrentModelKey struct{}
 
 type failoverCurrentModel struct {
-	model model.BaseChatModel
+	model any
 }
 
-func setFailoverCurrentModel(ctx context.Context, currentModel model.BaseChatModel) context.Context {
+func setFailoverCurrentModel(ctx context.Context, currentModel any) context.Context {
 	return context.WithValue(ctx, failoverCurrentModelKey{}, &failoverCurrentModel{
 		model: currentModel,
 	})
@@ -64,30 +64,35 @@ func getFailoverHasMoreAttempts(ctx context.Context) bool {
 	return v
 }
 
-type failoverProxyModel struct {
+type typedFailoverProxyModel[M MessageType] struct {
 }
 
-func (m *failoverProxyModel) prepareCallbacks(ctx context.Context) (context.Context, model.BaseChatModel, error) {
+func (m *typedFailoverProxyModel[M]) prepareCallbacks(ctx context.Context) (context.Context, model.BaseModel[M], error) {
 	current := getFailoverCurrentModel(ctx)
 	if current == nil || current.model == nil {
 		return nil, nil, errors.New("failover current model not found in context")
 	}
 
-	typ, _ := components.GetType(current.model)
+	target, ok := current.model.(model.BaseModel[M])
+	if !ok {
+		return nil, nil, fmt.Errorf("failover current model type mismatch: expected model.BaseModel[%T], got %T", *new(M), current.model)
+	}
+
+	typ, _ := components.GetType(target)
 	ctx = callbacks.EnsureRunInfo(ctx, typ, components.ComponentOfChatModel)
 
-	target := current.model
 	if !components.IsCallbacksEnabled(target) {
-		target = typedCallbackInjectionModelWrapper[*schema.Message]{}.wrapModel(target)
+		target = typedCallbackInjectionModelWrapper[M]{}.wrapModel(target)
 	}
 
 	return ctx, target, nil
 }
 
-func (m *failoverProxyModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+func (m *typedFailoverProxyModel[M]) Generate(ctx context.Context, input []M, opts ...model.Option) (M, error) {
 	nCtx, target, err := m.prepareCallbacks(ctx)
 	if err != nil {
-		return nil, err
+		var zero M
+		return zero, err
 	}
 
 	ctx = callbacks.OnStart(ctx, input)
@@ -103,7 +108,7 @@ func (m *failoverProxyModel) Generate(ctx context.Context, input []*schema.Messa
 	return result, nil
 }
 
-func (m *failoverProxyModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+func (m *typedFailoverProxyModel[M]) Stream(ctx context.Context, input []M, opts ...model.Option) (*schema.StreamReader[M], error) {
 	nCtx, target, err := m.prepareCallbacks(ctx)
 	if err != nil {
 		return nil, err
@@ -121,13 +126,15 @@ func (m *failoverProxyModel) Stream(ctx context.Context, input []*schema.Message
 	return wrappedStream, nil
 }
 
-func (m *failoverProxyModel) IsCallbacksEnabled() bool {
+func (m *typedFailoverProxyModel[M]) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (m *failoverProxyModel) GetType() string {
+func (m *typedFailoverProxyModel[M]) GetType() string {
 	return "FailoverProxyModel"
 }
+
+type failoverProxyModel = typedFailoverProxyModel[*schema.Message]
 
 // FailoverContext contains context information during failover process.
 type FailoverContext struct {
@@ -199,53 +206,116 @@ type ModelFailoverConfig struct {
 		failoverModel model.BaseChatModel, failoverModelInputMessages []*schema.Message, failoverErr error)
 }
 
-func getLastSuccessModel(ctx context.Context) model.BaseChatModel {
+func getLastSuccessModel(ctx context.Context) any {
 	if execCtx := getChatModelAgentExecCtx(ctx); execCtx != nil {
 		return execCtx.failoverLastSuccessModel
 	}
 	return nil
 }
 
-func setLastSuccessModel(ctx context.Context, m model.BaseChatModel) {
+func typedGetLastSuccessModel[M MessageType](ctx context.Context) model.BaseModel[M] {
+	execCtx := getTypedChatModelAgentExecCtx[M](ctx)
+	if execCtx == nil {
+		return nil
+	}
+	m := execCtx.failoverLastSuccessModel
+	if m == nil {
+		return nil
+	}
+	if typed, ok := m.(model.BaseModel[M]); ok {
+		return typed
+	}
+	return nil
+}
+
+func setLastSuccessModel(ctx context.Context, m any) {
 	if execCtx := getChatModelAgentExecCtx(ctx); execCtx != nil {
 		execCtx.failoverLastSuccessModel = m
 	}
 }
 
-type failoverModelWrapper struct {
-	config *ModelFailoverConfig
-	inner  model.BaseChatModel
+func typedSetLastSuccessModel[M MessageType](ctx context.Context, m model.BaseModel[M]) {
+	if execCtx := getTypedChatModelAgentExecCtx[M](ctx); execCtx != nil {
+		execCtx.failoverLastSuccessModel = m
+	}
 }
 
-func newFailoverModelWrapper(inner model.BaseChatModel, config *ModelFailoverConfig) *failoverModelWrapper {
-	return &failoverModelWrapper{
+type typedFailoverModelWrapper[M MessageType] struct {
+	config *ModelFailoverConfig
+	inner  model.BaseModel[M]
+}
+
+type failoverModelWrapper = typedFailoverModelWrapper[*schema.Message]
+
+func newTypedFailoverModelWrapper[M MessageType](inner model.BaseModel[M], config *ModelFailoverConfig) *typedFailoverModelWrapper[M] {
+	return &typedFailoverModelWrapper[M]{
 		config: config,
 		inner:  inner,
 	}
 }
 
-func (f *failoverModelWrapper) needFailover(ctx context.Context, outputMessage *schema.Message, outputErr error) bool {
+func newFailoverModelWrapper(inner model.BaseChatModel, config *ModelFailoverConfig) *failoverModelWrapper {
+	return newTypedFailoverModelWrapper[*schema.Message](inner, config)
+}
+
+func toSchemaMessage[M MessageType](msg M) *schema.Message {
+	if m, ok := any(msg).(*schema.Message); ok {
+		return m
+	}
+	return nil
+}
+
+func toSchemaMessages[M MessageType](msgs []M) []*schema.Message {
+	if m, ok := any(msgs).([]*schema.Message); ok {
+		return m
+	}
+	return nil
+}
+
+func (f *typedFailoverModelWrapper[M]) needFailover(ctx context.Context, outputMessage M, outputErr error) bool {
 	if ctx.Err() != nil {
 		return false
 	}
 
-	// ShouldFailover is validated at agent construction; nil here indicates a programmer error.
-	return f.config.ShouldFailover(ctx, outputMessage, outputErr)
+	return f.config.ShouldFailover(ctx, toSchemaMessage(outputMessage), outputErr)
 }
 
-func (f *failoverModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	// Defensive: GetFailoverModel is validated non-nil at agent construction.
+func (f *typedFailoverModelWrapper[M]) getFailoverModel(ctx context.Context, failoverCtx *FailoverContext) (model.BaseModel[M], []M, error) {
+	chatModel, msgs, err := f.config.GetFailoverModel(ctx, failoverCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if chatModel == nil {
+		return nil, nil, nil
+	}
+
+	typedModel, ok := any(chatModel).(model.BaseModel[M])
+	if !ok {
+		return nil, nil, fmt.Errorf("failover GetFailoverModel returned model of type %T, expected model.BaseModel[%T]", chatModel, *new(M))
+	}
+
+	var typedMsgs []M
+	if msgs != nil {
+		if m, ok := any(msgs).([]M); ok {
+			typedMsgs = m
+		}
+	}
+
+	return typedModel, typedMsgs, nil
+}
+
+func (f *typedFailoverModelWrapper[M]) Generate(ctx context.Context, input []M, opts ...model.Option) (M, error) {
 	if f.config.GetFailoverModel == nil {
 		return f.inner.Generate(ctx, input, opts...)
 	}
 
-	var lastOutputMessage *schema.Message
+	var lastOutputMessage M
 	var lastErr error
 
-	// Try lastSuccessModel first if available.
-	if lastSuccess := getLastSuccessModel(ctx); lastSuccess != nil {
+	if lastSuccess := typedGetLastSuccessModel[M](ctx); lastSuccess != nil {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			var zero M
+			return zero, err
 		}
 
 		modelCtx := setFailoverCurrentModel(ctx, lastSuccess)
@@ -267,22 +337,25 @@ func (f *failoverModelWrapper) Generate(ctx context.Context, input []*schema.Mes
 
 	for attempt := uint(1); attempt <= f.config.MaxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			var zero M
+			return zero, err
 		}
 
 		failoverCtx := &FailoverContext{
 			FailoverAttempt:   attempt,
-			InputMessages:     input,
-			LastOutputMessage: lastOutputMessage,
+			InputMessages:     toSchemaMessages(input),
+			LastOutputMessage: toSchemaMessage(lastOutputMessage),
 			LastErr:           lastErr,
 		}
 
-		currentModel, currentInput, err := f.config.GetFailoverModel(ctx, failoverCtx)
+		currentModel, currentInput, err := f.getFailoverModel(ctx, failoverCtx)
 		if err != nil {
-			return nil, err
+			var zero M
+			return zero, err
 		}
 		if currentModel == nil {
-			return nil, fmt.Errorf("failover GetFailoverModel returned nil model at attempt %d", attempt)
+			var zero M
+			return zero, fmt.Errorf("failover GetFailoverModel returned nil model at attempt %d", attempt)
 		}
 
 		if currentInput == nil {
@@ -296,7 +369,7 @@ func (f *failoverModelWrapper) Generate(ctx context.Context, input []*schema.Mes
 		lastErr = err
 
 		if err == nil {
-			setLastSuccessModel(ctx, currentModel)
+			typedSetLastSuccessModel[M](ctx, currentModel)
 			return result, nil
 		}
 
@@ -312,18 +385,16 @@ func (f *failoverModelWrapper) Generate(ctx context.Context, input []*schema.Mes
 	return lastOutputMessage, lastErr
 }
 
-func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
-	*schema.StreamReader[*schema.Message], error) {
-	// Defensive: GetFailoverModel is validated non-nil at agent construction.
+func (f *typedFailoverModelWrapper[M]) Stream(ctx context.Context, input []M, opts ...model.Option) (
+	*schema.StreamReader[M], error) {
 	if f.config.GetFailoverModel == nil {
 		return f.inner.Stream(ctx, input, opts...)
 	}
 
-	var lastOutputMessage *schema.Message
+	var lastOutputMessage M
 	var lastErr error
 
-	// Try lastSuccessModel first if available.
-	if lastSuccess := getLastSuccessModel(ctx); lastSuccess != nil {
+	if lastSuccess := typedGetLastSuccessModel[M](ctx); lastSuccess != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -333,7 +404,8 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 		stream, err := f.inner.Stream(modelCtx, input, opts...)
 		if err != nil {
 			lastErr = err
-			if !f.needFailover(ctx, nil, err) {
+			var zero M
+			if !f.needFailover(ctx, zero, err) {
 				return nil, err
 			}
 			log.Printf("failover ChatModel.Stream lastSuccessModel failed: %v", err)
@@ -342,7 +414,7 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 			checkCopy := copies[0]
 			returnCopy := copies[1]
 
-			outMsg, streamErr := consumeStream(checkCopy)
+			outMsg, streamErr := typedConsumeStream(checkCopy)
 			if streamErr != nil {
 				lastOutputMessage = outMsg
 				lastErr = streamErr
@@ -365,12 +437,12 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 
 		failoverCtx := &FailoverContext{
 			FailoverAttempt:   attempt,
-			InputMessages:     input,
-			LastOutputMessage: lastOutputMessage,
+			InputMessages:     toSchemaMessages(input),
+			LastOutputMessage: toSchemaMessage(lastOutputMessage),
 			LastErr:           lastErr,
 		}
 
-		currentModel, currentInput, err := f.config.GetFailoverModel(ctx, failoverCtx)
+		currentModel, currentInput, err := f.getFailoverModel(ctx, failoverCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -387,9 +459,10 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 		stream, err := f.inner.Stream(modelCtx, currentInput, opts...)
 		if err != nil {
 			lastErr = err
-			lastOutputMessage = nil
+			var zero M
+			lastOutputMessage = zero
 
-			if !f.needFailover(ctx, nil, err) {
+			if !f.needFailover(ctx, zero, err) {
 				return nil, err
 			}
 
@@ -399,27 +472,11 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 			continue
 		}
 
-		// The stream returned by f.inner.Stream is already Copy'd by the inner eventSender layer: one
-		// copy is forwarded to the client in real time via events. Therefore consuming a copy here does
-		// NOT block client-side streaming.
-		//
-		// We Copy the stream into two readers:
-		//   - checkCopy: consumed synchronously to surface mid-stream errors and decide whether to fail over.
-		//   - returnCopy: returned to the caller (stateModelWrapper), which also consumes synchronously to
-		//     build state (AfterModelRewriteState), so waiting here adds no extra latency.
-		//
-		// If checkCopy errors and failover is allowed, we close returnCopy and retry with the next model.
-		// Otherwise we return returnCopy.
-		//
-		// NOTE on duplicate events during failover: when a retry happens, events from the failed attempt
-		// may already have been emitted to the client, and the retry will emit a new stream. Client-side
-		// handlers are expected to handle multiple rounds (e.g., reset on retry or deduplicate by attempt
-		// metadata).
 		copies := stream.Copy(2)
 		checkCopy := copies[0]
 		returnCopy := copies[1]
 
-		outMsg, streamErr := consumeStream(checkCopy)
+		outMsg, streamErr := typedConsumeStream(checkCopy)
 		if streamErr != nil {
 			lastOutputMessage = outMsg
 			lastErr = streamErr
@@ -435,14 +492,34 @@ func (f *failoverModelWrapper) Stream(ctx context.Context, input []*schema.Messa
 			continue
 		}
 
-		setLastSuccessModel(ctx, currentModel)
+		typedSetLastSuccessModel[M](ctx, currentModel)
 		return returnCopy, nil
 	}
 
 	return nil, lastErr
 }
 
-func consumeStream(stream *schema.StreamReader[*schema.Message]) (*schema.Message, error) {
+func typedConsumeStream[M MessageType](stream *schema.StreamReader[M]) (M, error) {
+	var zero M
+	switch s := any(stream).(type) {
+	case *schema.StreamReader[*schema.Message]:
+		msg, err := consumeMessageStream(s)
+		if msg != nil {
+			return any(msg).(M), err
+		}
+		return zero, err
+	case *schema.StreamReader[*schema.AgenticMessage]:
+		msg, err := consumeAgenticStream(s)
+		if msg != nil {
+			return any(msg).(M), err
+		}
+		return zero, err
+	default:
+		return zero, fmt.Errorf("unsupported message type for stream consumption")
+	}
+}
+
+func consumeMessageStream(stream *schema.StreamReader[*schema.Message]) (*schema.Message, error) {
 	defer stream.Close()
 	chunks := make([]*schema.Message, 0)
 	for {
@@ -451,7 +528,6 @@ func consumeStream(stream *schema.StreamReader[*schema.Message]) (*schema.Messag
 			break
 		}
 		if err != nil {
-			// ignore concat error
 			msg, _ := schema.ConcatMessages(chunks)
 			return msg, err
 		}
@@ -459,8 +535,26 @@ func consumeStream(stream *schema.StreamReader[*schema.Message]) (*schema.Messag
 		chunks = append(chunks, chunk)
 	}
 
-	// Stream completed successfully (EOF). ConcatMessages error is not a stream error,
-	// so ignore it to avoid incorrectly triggering failover.
 	msg, _ := schema.ConcatMessages(chunks)
+	return msg, nil
+}
+
+func consumeAgenticStream(stream *schema.StreamReader[*schema.AgenticMessage]) (*schema.AgenticMessage, error) {
+	defer stream.Close()
+	chunks := make([]*schema.AgenticMessage, 0)
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			msg, _ := schema.ConcatAgenticMessages(chunks)
+			return msg, err
+		}
+
+		chunks = append(chunks, chunk)
+	}
+
+	msg, _ := schema.ConcatAgenticMessages(chunks)
 	return msg, nil
 }

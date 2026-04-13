@@ -48,7 +48,8 @@ type typedChatModelAgentExecCtx[M MessageType] struct {
 	cancelCtx             *cancelContext
 
 	// failoverLastSuccessModel is the last success model only used in failover middleware.
-	failoverLastSuccessModel model.BaseModel[M]
+	// Stored as any to support both *schema.Message and *schema.AgenticMessage model types.
+	failoverLastSuccessModel any
 }
 
 func (e *typedChatModelAgentExecCtx[M]) send(event *TypedAgentEvent[M]) {
@@ -457,11 +458,6 @@ func NewChatModelAgent(ctx context.Context, config *ChatModelAgentConfig) (*Chat
 // NewTypedChatModelAgent creates a new TypedChatModelAgent with the given config.
 func NewTypedChatModelAgent[M MessageType](ctx context.Context, config *TypedChatModelAgentConfig[M]) (*TypedChatModelAgent[M], error) {
 	if config.ModelFailoverConfig != nil {
-		var zero M
-		if _, ok := any(zero).(*schema.Message); !ok {
-			return nil, errors.New("ModelFailoverConfig is only supported for *schema.Message agents; AgenticMessage agents cannot use failover")
-		}
-
 		if config.ModelFailoverConfig.GetFailoverModel == nil {
 			return nil, errors.New("ModelFailoverConfig.GetFailoverModel is required when ModelFailoverConfig is set")
 		}
@@ -872,18 +868,13 @@ func (a *TypedChatModelAgent[M]) handleRunFuncError(
 		}
 
 		is := FromInterruptContexts(info.InterruptContexts)
-		event := CompositeInterrupt(ctx, info, data, is)
+		event := TypedCompositeInterrupt[M](ctx, info, data, is)
 		event.Action.Interrupted.Data = &ChatModelAgentInterruptInfo{
 			Info: info,
 			Data: data,
 		}
 		event.AgentName = a.name
-		generator.Send(&TypedAgentEvent[M]{
-			AgentName: event.AgentName,
-			RunPath:   event.RunPath,
-			Action:    event.Action,
-			Err:       event.Err,
-		})
+		generator.Send(event)
 		return
 	}
 
@@ -964,6 +955,7 @@ func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc(_ context.Context) (typedRu
 			failoverLastSuccessModel: a.model,
 		})
 
+		// Pre-execution cancel check
 		if cancelCtx != nil && cancelCtx.shouldCancel() {
 			if cancelCtx.getMode() == CancelImmediate || atomic.LoadInt32(&cancelCtx.escalated) == 1 {
 				cancelErr, ok := cancelCtx.createAndMarkCancelHandled()
@@ -1094,6 +1086,7 @@ func (a *TypedChatModelAgent[M]) buildMessageReActRunFunc(ctx context.Context, b
 			failoverLastSuccessModel: msgModel,
 		})
 
+		// Pre-execution cancel check
 		if cancelCtx != nil && cancelCtx.shouldCancel() {
 			if cancelCtx.getMode() == CancelImmediate || atomic.LoadInt32(&cancelCtx.escalated) == 1 {
 				cancelErr, ok := cancelCtx.createAndMarkCancelHandled()
@@ -1220,6 +1213,7 @@ func (a *TypedChatModelAgent[M]) buildAgenticReActRunFunc(ctx context.Context, b
 			generator:             ap.generator,
 		})
 
+		// Pre-execution cancel check
 		if cancelCtx != nil && cancelCtx.shouldCancel() {
 			if cancelCtx.getMode() == CancelImmediate || atomic.LoadInt32(&cancelCtx.escalated) == 1 {
 				cancelErr, ok := cancelCtx.createAndMarkCancelHandled()

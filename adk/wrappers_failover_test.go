@@ -181,7 +181,7 @@ func TestStateModelWrapper_Stream_WithFailover(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&shouldCalls))
 }
 
-func TestFailoverRejectsAgenticAgent(t *testing.T) {
+func TestFailoverAcceptsAgenticAgent(t *testing.T) {
 	ctx := context.Background()
 
 	m := &mockAgenticModel{
@@ -196,7 +196,7 @@ func TestFailoverRejectsAgenticAgent(t *testing.T) {
 		},
 	}
 
-	_, err := NewTypedChatModelAgent[*schema.AgenticMessage](ctx, &TypedChatModelAgentConfig[*schema.AgenticMessage]{
+	agent, err := NewTypedChatModelAgent[*schema.AgenticMessage](ctx, &TypedChatModelAgentConfig[*schema.AgenticMessage]{
 		Name:        "FailoverAgent",
 		Description: "Agent with failover config",
 		Model:       m,
@@ -210,6 +210,6 @@ func TestFailoverRejectsAgenticAgent(t *testing.T) {
 			},
 		},
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ModelFailoverConfig is only supported for *schema.Message agents")
+	require.NoError(t, err)
+	assert.NotNil(t, agent)
 }

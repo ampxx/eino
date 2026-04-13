@@ -50,10 +50,8 @@ func newUserMessage[M MessageType](query string) (M, error) {
 // TypedRunner is the primary entry point for executing an Agent.
 // It manages the agent's lifecycle, including starting, resuming, and checkpointing.
 //
-// For M = *schema.Message, execution goes through the full flowAgent pipeline
-// (multi-agent orchestration, message rewriting, etc.).
-// For other M types (e.g. *schema.AgenticMessage), the agent is called directly
-// without flowAgent wrapping.
+// Execution always goes through the flowAgent pipeline, which handles
+// multi-agent orchestration, callbacks, agent naming, run paths, and cancellation.
 type TypedRunner[M MessageType] struct {
 	a               TypedAgent[M]
 	enableStreaming bool

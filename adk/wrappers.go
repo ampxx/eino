@@ -52,9 +52,7 @@ func buildModelWrappersImpl[M MessageType](m model.BaseModel[M], config *typedMo
 	var wrapped model.BaseModel[M] = m
 
 	if config.failoverConfig != nil {
-		if proxy, ok := any(&failoverProxyModel{}).(model.BaseModel[M]); ok {
-			wrapped = proxy
-		}
+		wrapped = &typedFailoverProxyModel[M]{}
 	}
 
 	if !components.IsCallbacksEnabled(wrapped) {
@@ -675,22 +673,12 @@ func (w *typedStateModelWrapper[M]) wrapGenerateEndpoint(endpoint typedGenerateE
 		}
 	}
 
-	// SAFETY: ModelFailoverConfig is rejected at construction time (NewTypedChatModelAgent)
-	// when M != *schema.Message. The checked assertion below is a defense-in-depth guard;
-	// the subsequent unchecked casts (any(input).([]*schema.Message), any(result).(M)) are
-	// safe because ok==true proves M is *schema.Message.
 	if w.modelFailoverConfig != nil {
 		config := w.modelFailoverConfig
 		innerEndpoint := endpoint
 		endpoint = func(ctx context.Context, input []M, opts ...model.Option) (M, error) {
-			msgEndpoint, ok := any(innerEndpoint).(typedGenerateEndpoint[*schema.Message])
-			if !ok {
-				var zero M
-				return zero, errors.New("failover is only supported for *schema.Message agents")
-			}
-			failoverWrapper := newFailoverModelWrapper(&typedEndpointModel[*schema.Message]{generate: msgEndpoint}, config)
-			result, err := failoverWrapper.Generate(ctx, any(input).([]*schema.Message), opts...)
-			return any(result).(M), err
+			failoverWrapper := newTypedFailoverModelWrapper[M](&typedEndpointModel[M]{generate: innerEndpoint}, config)
+			return failoverWrapper.Generate(ctx, input, opts...)
 		}
 	}
 
@@ -746,22 +734,12 @@ func (w *typedStateModelWrapper[M]) wrapStreamEndpoint(endpoint typedStreamEndpo
 		}
 	}
 
-	// SAFETY: Same invariant as wrapGenerateEndpoint — ModelFailoverConfig is rejected
-	// at construction time when M != *schema.Message. See comment above.
 	if w.modelFailoverConfig != nil {
 		config := w.modelFailoverConfig
 		innerEndpoint := endpoint
 		endpoint = func(ctx context.Context, input []M, opts ...model.Option) (*schema.StreamReader[M], error) {
-			msgEndpoint, ok := any(innerEndpoint).(typedStreamEndpoint[*schema.Message])
-			if !ok {
-				return nil, errors.New("failover is only supported for *schema.Message agents")
-			}
-			failoverWrapper := newFailoverModelWrapper(&typedEndpointModel[*schema.Message]{stream: msgEndpoint}, config)
-			result, err := failoverWrapper.Stream(ctx, any(input).([]*schema.Message), opts...)
-			if err != nil {
-				return nil, err
-			}
-			return any(result).(*schema.StreamReader[M]), nil
+			failoverWrapper := newTypedFailoverModelWrapper[M](&typedEndpointModel[M]{stream: innerEndpoint}, config)
+			return failoverWrapper.Stream(ctx, input, opts...)
 		}
 	}
 

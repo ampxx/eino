@@ -360,7 +360,7 @@ func TestGetAgenticReactHistory(t *testing.T) {
 		}
 	}))
 	assert.NoError(t, g.AddLambdaNode("1", compose.InvokableLambda(func(ctx context.Context, input string) (output []*schema.AgenticMessage, err error) {
-		return getAgenticReactChatHistory(ctx, "DestAgentName")
+		return getAgenticReactChatHistory(ctx)
 	})))
 	assert.NoError(t, g.AddEdge(compose.START, "1"))
 	assert.NoError(t, g.AddEdge("1", compose.END))
@@ -371,12 +371,10 @@ func TestGetAgenticReactHistory(t *testing.T) {
 	assert.NoError(t, err)
 	result, err := runner.Invoke(ctx, "")
 	assert.NoError(t, err)
-	assert.Len(t, result, 5)
+	assert.Len(t, result, 3)
 	assert.Equal(t, schema.AgenticRoleTypeUser, result[0].Role)
 	assert.Equal(t, schema.AgenticRoleTypeUser, result[1].Role)
 	assert.Equal(t, schema.AgenticRoleTypeUser, result[2].Role)
-	assert.Equal(t, schema.AgenticRoleTypeUser, result[3].Role)
-	assert.Equal(t, schema.AgenticRoleTypeUser, result[4].Role)
 }
 
 // mockAgentWithInputCapture implements the Agent interface for testing and captures the input it receives

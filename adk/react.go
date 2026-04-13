@@ -78,20 +78,18 @@ func init() {
 	schema.RegisterName[*typedState[*schema.AgenticMessage]]("_eino_adk_agentic_state")
 	schema.RegisterName[*TypedAgentEvent[*schema.AgenticMessage]]("_eino_adk_agentic_event")
 
-	// Gob registrations for checkpoint serialization: interrupt/resume requires all
-	// concrete types reachable from the checkpoint state graph to be registered with
-	// encoding/gob. Without these, gob.Encode/Decode will fail when persisting or
-	// restoring agent state across process boundaries.
+	// backward compatibility when decoding checkpoints created by v0.8.0 - v0.8.3
 	gob.Register(&AgentEvent{})
 	gob.Register(int(0))
-	gob.Register(&AgentInput{})
-	gob.Register(&TypedAgentInput[*schema.AgenticMessage]{})
-	gob.Register(&typedAgentEventWrapper[*schema.AgenticMessage]{})
-	gob.Register(&[]*typedAgentEventWrapper[*schema.AgenticMessage]{})
-	gob.Register(&typedLaneEventsOf[*schema.AgenticMessage]{})
-	gob.Register(map[int][]*typedAgentEventWrapper[*schema.AgenticMessage]{})
-	gob.Register(&schema.AgenticMessage{})
-	gob.Register([]*schema.AgenticMessage{})
+
+	schema.RegisterName[*AgentInput]("_eino_adk_agent_input")
+	schema.RegisterName[*TypedAgentInput[*schema.AgenticMessage]]("_eino_adk_agentic_agent_input")
+	schema.RegisterName[*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper")
+	schema.RegisterName[*[]*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper_slice")
+	schema.RegisterName[*typedLaneEventsOf[*schema.AgenticMessage]]("_eino_adk_agentic_lane_events")
+	schema.RegisterName[map[int][]*typedAgentEventWrapper[*schema.AgenticMessage]]("_eino_adk_agentic_event_wrapper_map")
+	schema.RegisterName[*schema.AgenticMessage]("_eino_adk_agentic_message")
+	schema.RegisterName[[]*schema.AgenticMessage]("_eino_adk_agentic_message_slice")
 	schema.RegisterName[*reactInput]("_eino_adk_react_input")
 	schema.RegisterName[*agenticReactInput]("_eino_adk_agentic_react_input")
 }

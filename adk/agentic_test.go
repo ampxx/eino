@@ -1999,28 +1999,6 @@ func TestCoverage_CopyAgenticEvent(t *testing.T) {
 	assert.NotEqual(t, original.RunPath[0].agentName, copied.RunPath[0].agentName)
 }
 
-func TestCoverage_GenAgenticTransferMessages(t *testing.T) {
-	aMsg, tMsg := genAgenticTransferMessages("target-agent")
-	require.NotNil(t, aMsg)
-	require.NotNil(t, tMsg)
-
-	assert.Equal(t, schema.AgenticRoleTypeAssistant, aMsg.Role)
-	assert.Equal(t, schema.AgenticRoleTypeUser, tMsg.Role)
-
-	require.NotEmpty(t, aMsg.ContentBlocks)
-	toolCallBlock := aMsg.ContentBlocks[0]
-	assert.Equal(t, schema.ContentBlockTypeFunctionToolCall, toolCallBlock.Type)
-	require.NotNil(t, toolCallBlock.FunctionToolCall)
-	assert.Equal(t, TransferToAgentToolName, toolCallBlock.FunctionToolCall.Name)
-
-	require.NotEmpty(t, tMsg.ContentBlocks)
-	toolResultBlock := tMsg.ContentBlocks[0]
-	assert.Equal(t, schema.ContentBlockTypeFunctionToolResult, toolResultBlock.Type)
-	require.NotNil(t, toolResultBlock.FunctionToolResult)
-	assert.Equal(t, TransferToAgentToolName, toolResultBlock.FunctionToolResult.Name)
-	assert.Contains(t, toolResultBlock.FunctionToolResult.Result, "target-agent")
-}
-
 func TestCoverage_FlowAgent_HistoryRewriter(t *testing.T) {
 	ctx := context.Background()
 

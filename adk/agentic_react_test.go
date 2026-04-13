@@ -1220,7 +1220,7 @@ func TestAgenticReactHistory_EmptyMessages(t *testing.T) {
 		}
 	}))
 	require.NoError(t, g.AddLambdaNode("1", compose.InvokableLambda(func(ctx context.Context, input string) (output []*schema.AgenticMessage, err error) {
-		return getAgenticReactChatHistory(ctx, "DestAgent")
+		return getAgenticReactChatHistory(ctx)
 	})))
 	require.NoError(t, g.AddEdge(compose.START, "1"))
 	require.NoError(t, g.AddEdge("1", compose.END))

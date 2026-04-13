@@ -36,9 +36,6 @@ const ComponentOfAgent components.Component = "Agent"
 // that use *schema.AgenticMessage in callbacks.
 const ComponentOfAgentic components.Component = "AgenticAgent"
 
-// Deprecated: Use ComponentOfAgentic.
-const ComponentOfAgenticAgent = ComponentOfAgentic
-
 // MessageType is the sealed type constraint for message types used in ADK.
 // Only *schema.Message and *schema.AgenticMessage satisfy this constraint.
 // External packages cannot add new types to this union; all generic functions
@@ -372,15 +369,12 @@ type TypedAgent[M MessageType] interface {
 //go:generate  mockgen -destination ../internal/mock/adk/Agent_mock.go --package adk github.com/cloudwego/eino/adk Agent,ResumableAgent
 type Agent = TypedAgent[*schema.Message]
 
-type typedOnSubAgents[M MessageType] interface {
-	OnSetSubAgents(ctx context.Context, subAgents []TypedAgent[M]) error
-	OnSetAsSubAgent(ctx context.Context, parent TypedAgent[M]) error
+type OnSubAgents interface {
+	OnSetSubAgents(ctx context.Context, subAgents []Agent) error
+	OnSetAsSubAgent(ctx context.Context, parent Agent) error
 
 	OnDisallowTransferToParent(ctx context.Context) error
 }
-
-// OnSubAgents is the concrete *schema.Message variant.
-type OnSubAgents = typedOnSubAgents[*schema.Message]
 
 type TypedResumableAgent[M MessageType] interface {
 	TypedAgent[M]

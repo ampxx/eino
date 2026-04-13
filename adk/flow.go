@@ -78,16 +78,17 @@ func SetSubAgents(ctx context.Context, agent Agent, subAgents []Agent) (Resumabl
 	return setSubAgents(ctx, agent, subAgents)
 }
 
-type typedAgentOption[M MessageType] func(options *typedFlowAgent[M])
+type AgentOption func(options *flowAgent)
 
-type AgentOption = typedAgentOption[*schema.Message]
+type typedAgentOption[M MessageType] func(options *typedFlowAgent[M])
 
 // WithDisallowTransferToParent prevents a sub-agent from transferring to its parent.
 func WithDisallowTransferToParent() AgentOption {
-	return typedWithDisallowTransferToParent[*schema.Message]()
+	return func(fa *flowAgent) {
+		fa.disallowTransferToParent = true
+	}
 }
 
-// typedWithDisallowTransferToParent prevents a typed sub-agent from transferring to its parent.
 func typedWithDisallowTransferToParent[M MessageType]() typedAgentOption[M] {
 	return func(fa *typedFlowAgent[M]) {
 		fa.disallowTransferToParent = true
@@ -96,10 +97,11 @@ func typedWithDisallowTransferToParent[M MessageType]() typedAgentOption[M] {
 
 // WithHistoryRewriter sets a rewriter to transform conversation history.
 func WithHistoryRewriter(h HistoryRewriter) AgentOption {
-	return typedWithHistoryRewriter[*schema.Message](h)
+	return func(fa *flowAgent) {
+		fa.historyRewriter = h
+	}
 }
 
-// typedWithHistoryRewriter sets a typed rewriter to transform conversation history.
 func typedWithHistoryRewriter[M MessageType](h typedHistoryRewriter[M]) typedAgentOption[M] {
 	return func(fa *typedFlowAgent[M]) {
 		fa.historyRewriter = h
@@ -126,7 +128,11 @@ func toTypedFlowAgent[M MessageType](ctx context.Context, agent TypedAgent[M], o
 }
 
 func toFlowAgent(ctx context.Context, agent Agent, opts ...AgentOption) *flowAgent {
-	return toTypedFlowAgent(ctx, agent, opts...)
+	fa := toTypedFlowAgent[*schema.Message](ctx, agent)
+	for _, opt := range opts {
+		opt(fa)
+	}
+	return fa
 }
 
 // AgentWithOptions wraps an agent with flow-specific options and returns it.
@@ -134,7 +140,13 @@ func AgentWithOptions(ctx context.Context, agent Agent, opts ...AgentOption) Age
 	return toFlowAgent(ctx, agent, opts...)
 }
 
-// typedSetSubAgents sets the sub-agents for a typed agent and returns the resulting TypedResumableAgent.
+type internalOnSubAgents[M MessageType] interface {
+	OnSetSubAgents(ctx context.Context, subAgents []TypedAgent[M]) error
+	OnSetAsSubAgent(ctx context.Context, parent TypedAgent[M]) error
+
+	OnDisallowTransferToParent(ctx context.Context) error
+}
+
 func typedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M], subAgents []TypedAgent[M]) (TypedResumableAgent[M], error) {
 	return doTypedSetSubAgents(ctx, agent, subAgents)
 }
@@ -146,7 +158,7 @@ func doTypedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M]
 		return nil, errors.New("agent's sub-agents has already been set")
 	}
 
-	if onAgent, ok_ := fa.TypedAgent.(typedOnSubAgents[M]); ok_ {
+	if onAgent, ok_ := fa.TypedAgent.(internalOnSubAgents[M]); ok_ {
 		err := onAgent.OnSetSubAgents(ctx, subAgents)
 		if err != nil {
 			return nil, err
@@ -161,7 +173,7 @@ func doTypedSetSubAgents[M MessageType](ctx context.Context, agent TypedAgent[M]
 		}
 
 		fsa.parentAgent = fa
-		if onAgent, ok__ := fsa.TypedAgent.(typedOnSubAgents[M]); ok__ {
+		if onAgent, ok__ := fsa.TypedAgent.(internalOnSubAgents[M]); ok__ {
 			err := onAgent.OnSetAsSubAgent(ctx, agent)
 			if err != nil {
 				return nil, err
@@ -515,12 +527,14 @@ func (a *typedFlowAgent[M]) Run(ctx context.Context, input *TypedAgentInput[M], 
 
 	input = processedInput
 
-	if wf, ok := a.TypedAgent.(*typedWorkflowAgent[M]); ok {
+	if wf, ok := any(a.TypedAgent).(*workflowAgent); ok {
 		ctx = withCancelContext(ctx, cancelCtx)
 		filteredOpts := filterCancelOption(filterCallbackHandlersForNestedAgents(agentName, opts))
-		iter := wf.Run(ctx, input, filteredOpts...)
+		wfInput, _ := any(input).(*AgentInput)
+		iter := wf.Run(ctx, wfInput, filteredOpts...)
 		iter = wrapIterWithCancelCtx(iter, cancelCtx)
-		return typedWrapIterWithOnEnd(ctx, iter)
+		wfIter := typedWrapIterWithOnEnd[*schema.Message](ctx, iter)
+		return any(wfIter).(*AsyncIterator[*TypedAgentEvent[M]])
 	}
 
 	aIter := a.TypedAgent.Run(withCancelContext(ctx, cancelCtx), input, filterOptions(agentName, opts)...)
@@ -557,12 +571,13 @@ func (a *typedFlowAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts .
 
 	if info.WasInterrupted {
 		if ra, ok := a.TypedAgent.(TypedResumableAgent[M]); ok {
-			if _, ok := ra.(*typedWorkflowAgent[M]); ok {
+			if wfRA, ok := any(ra).(*workflowAgent); ok {
 				ctx = withCancelContext(ctx, cancelCtx)
 				filteredOpts := filterCancelOption(filterCallbackHandlersForNestedAgents(agentName, opts))
-				aIter := ra.Resume(ctx, info, filteredOpts...)
+				aIter := wfRA.Resume(ctx, info, filteredOpts...)
 				aIter = wrapIterWithCancelCtx(aIter, cancelCtx)
-				return typedWrapIterWithOnEnd(ctx, aIter)
+				wfIter := typedWrapIterWithOnEnd[*schema.Message](ctx, aIter)
+				return any(wfIter).(*AsyncIterator[*TypedAgentEvent[M]])
 			}
 
 			aIter := ra.Resume(withCancelContext(ctx, cancelCtx), info, opts...)

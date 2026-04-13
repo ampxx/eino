@@ -54,6 +54,26 @@ func (m *mockAgenticModel) Stream(ctx context.Context, input []*schema.AgenticMe
 	return r, nil
 }
 
+type testAgenticMiddleware struct {
+	*TypedBaseChatModelAgentMiddleware[*schema.AgenticMessage]
+	beforeFn func(context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error)
+	afterFn  func(context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error)
+}
+
+func (m *testAgenticMiddleware) BeforeModelRewriteState(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage], mc *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error) {
+	if m.beforeFn != nil {
+		return m.beforeFn(ctx, state, mc)
+	}
+	return ctx, state, nil
+}
+
+func (m *testAgenticMiddleware) AfterModelRewriteState(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage], mc *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error) {
+	if m.afterFn != nil {
+		return m.afterFn(ctx, state, mc)
+	}
+	return ctx, state, nil
+}
+
 func TestAgenticChatModelAgentRun_NoTools(t *testing.T) {
 	ctx := context.Background()
 
@@ -377,26 +397,26 @@ func TestAgenticChatModelAgentRun_WithMiddleware(t *testing.T) {
 		},
 	}
 
-	afterAgenticModelExecuted := false
+	afterModelExecuted := false
+
+	mw := &testAgenticMiddleware{
+		beforeFn: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage], mc *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error) {
+			state.Messages = append(state.Messages, schema.UserAgenticMessage("extra"))
+			return ctx, state, nil
+		},
+		afterFn: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage], mc *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error) {
+			assert.Len(t, state.Messages, 4)
+			afterModelExecuted = true
+			return ctx, state, nil
+		},
+	}
 
 	agent, err := NewTypedChatModelAgent[*schema.AgenticMessage](ctx, &TypedChatModelAgentConfig[*schema.AgenticMessage]{
 		Name:        "AgenticMiddlewareAgent",
 		Description: "Agentic agent with middleware",
 		Instruction: "You are helpful.",
 		Model:       m,
-		Middlewares: []AgentMiddleware{
-			{
-				BeforeAgenticModel: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage]) error {
-					state.Messages = append(state.Messages, schema.UserAgenticMessage("extra"))
-					return nil
-				},
-				AfterAgenticModel: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage]) error {
-					assert.Len(t, state.Messages, 4)
-					afterAgenticModelExecuted = true
-					return nil
-				},
-			},
-		},
+		Handlers:    []TypedChatModelAgentMiddleware[*schema.AgenticMessage]{mw},
 	})
 	assert.NoError(t, err)
 
@@ -415,7 +435,7 @@ func TestAgenticChatModelAgentRun_WithMiddleware(t *testing.T) {
 	assert.Equal(t, schema.AgenticRoleTypeAssistant, event.Output.MessageOutput.Message.Role)
 	_, ok = iter.Next()
 	assert.False(t, ok)
-	assert.True(t, afterAgenticModelExecuted)
+	assert.True(t, afterModelExecuted)
 }
 
 func TestAgenticAfterModel_NoTools_ModifyDoesNotAffectEvent(t *testing.T) {
@@ -431,16 +451,16 @@ func TestAgenticAfterModel_NoTools_ModifyDoesNotAffectEvent(t *testing.T) {
 
 	agent, err := NewTypedChatModelAgent[*schema.AgenticMessage](ctx, &TypedChatModelAgentConfig[*schema.AgenticMessage]{
 		Name:        "AgenticAfterModelAgent",
-		Description: "Test AfterAgenticModel",
+		Description: "Test AfterModelRewriteState",
 		Instruction: "You are helpful.",
 		Model:       m,
-		Middlewares: []AgentMiddleware{
-			{
-				AfterAgenticModel: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage]) error {
+		Handlers: []TypedChatModelAgentMiddleware[*schema.AgenticMessage]{
+			&testAgenticMiddleware{
+				afterFn: func(ctx context.Context, state *TypedChatModelAgentState[*schema.AgenticMessage], mc *ModelContext) (context.Context, *TypedChatModelAgentState[*schema.AgenticMessage], error) {
 					capturedMessages = make([]*schema.AgenticMessage, len(state.Messages))
 					copy(capturedMessages, state.Messages)
 					state.Messages = append(state.Messages, agenticAssistantMessage("appended content"))
-					return nil
+					return ctx, state, nil
 				},
 			},
 		},
@@ -564,8 +584,8 @@ func TestAgenticChatModelAgentOutputKey(t *testing.T) {
 			},
 		}
 		ctx, runCtx := initTypedRunCtx[*schema.AgenticMessage](ctx, "AgenticOutputKeyAgent", input)
-		assert.NotNil(t, runCtx)
-		assert.NotNil(t, runCtx.Session)
+		require.NotNil(t, runCtx)
+		require.NotNil(t, runCtx.Session)
 
 		iterator := agent.Run(ctx, input)
 
@@ -618,8 +638,8 @@ func TestAgenticChatModelAgentOutputKey(t *testing.T) {
 			EnableStreaming: true,
 		}
 		ctx, runCtx := initTypedRunCtx[*schema.AgenticMessage](ctx, "AgenticStreamOutputKeyAgent", input)
-		assert.NotNil(t, runCtx)
-		assert.NotNil(t, runCtx.Session)
+		require.NotNil(t, runCtx)
+		require.NotNil(t, runCtx.Session)
 
 		iterator := agent.Run(ctx, input)
 
@@ -639,8 +659,8 @@ func TestAgenticChatModelAgentOutputKey(t *testing.T) {
 			Messages: []*schema.AgenticMessage{schema.UserAgenticMessage("test")},
 		}
 		ctx, runCtx := initTypedRunCtx[*schema.AgenticMessage](ctx, "TestAgent", input)
-		assert.NotNil(t, runCtx)
-		assert.NotNil(t, runCtx.Session)
+		require.NotNil(t, runCtx)
+		require.NotNil(t, runCtx.Session)
 
 		msg := agenticAssistantMessage("Test response")
 		err := setOutputToSession(ctx, msg, nil, "test_output")
@@ -1023,7 +1043,7 @@ func TestAgenticSequentialAgentWithExit(t *testing.T) {
 	event1, ok := iterator.Next()
 	assert.True(t, ok)
 	assert.Nil(t, event1.Err)
-	assert.NotNil(t, event1.Output)
+	require.NotNil(t, event1.Output)
 	require.NotNil(t, event1.Action)
 	assert.True(t, event1.Action.Exit)
 
@@ -1325,7 +1345,7 @@ func TestAgenticMultiAgentInterrupt(t *testing.T) {
 			return iter
 		},
 		resumeFn: func(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[*schema.AgenticMessage]] {
-			assert.NotNil(t, info)
+			require.NotNil(t, info)
 			assert.Equal(t, info.Data, "hello world")
 
 			assert.True(t, info.WasInterrupted)
@@ -1544,9 +1564,9 @@ func TestCascadingTyped_TypedEventFromMessage(t *testing.T) {
 	}
 
 	event := TypedEventFromMessage(msg, nil, schema.Assistant, "")
-	assert.NotNil(t, event)
-	assert.NotNil(t, event.Output)
-	assert.NotNil(t, event.Output.MessageOutput)
+	require.NotNil(t, event)
+	require.NotNil(t, event.Output)
+	require.NotNil(t, event.Output.MessageOutput)
 	assert.Equal(t, msg, event.Output.MessageOutput.Message)
 	assert.Equal(t, schema.RoleType(schema.Assistant), event.Output.MessageOutput.Role)
 }

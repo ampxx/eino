@@ -786,15 +786,6 @@ func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, input []M, opt
 				}
 			}
 		}
-	} else if agState, ok := any(state).(*TypedChatModelAgentState[*schema.AgenticMessage]); ok {
-		for _, m := range w.middlewares {
-			if m.BeforeAgenticModel != nil {
-				if err := m.BeforeAgenticModel(ctx, agState); err != nil {
-					var zero M
-					return zero, err
-				}
-			}
-		}
 	}
 
 	baseOpts := &model.Options{Tools: w.toolInfos}
@@ -839,15 +830,6 @@ func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, input []M, opt
 				}
 			}
 		}
-	} else if agState, ok := any(state).(*TypedChatModelAgentState[*schema.AgenticMessage]); ok {
-		for _, m := range w.middlewares {
-			if m.AfterAgenticModel != nil {
-				if err := m.AfterAgenticModel(ctx, agState); err != nil {
-					var zero M
-					return zero, err
-				}
-			}
-		}
 	}
 
 	_ = compose.ProcessState(ctx, func(_ context.Context, st *typedState[M]) error {
@@ -875,14 +857,6 @@ func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, input []M, opts 
 		for _, m := range w.middlewares {
 			if m.BeforeChatModel != nil {
 				if err := m.BeforeChatModel(ctx, msgState); err != nil {
-					return nil, err
-				}
-			}
-		}
-	} else if agState, ok := any(state).(*TypedChatModelAgentState[*schema.AgenticMessage]); ok {
-		for _, m := range w.middlewares {
-			if m.BeforeAgenticModel != nil {
-				if err := m.BeforeAgenticModel(ctx, agState); err != nil {
 					return nil, err
 				}
 			}
@@ -927,14 +901,6 @@ func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, input []M, opts 
 		for _, m := range w.middlewares {
 			if m.AfterChatModel != nil {
 				if err := m.AfterChatModel(ctx, msgState); err != nil {
-					return nil, err
-				}
-			}
-		}
-	} else if agState, ok := any(state).(*TypedChatModelAgentState[*schema.AgenticMessage]); ok {
-		for _, m := range w.middlewares {
-			if m.AfterAgenticModel != nil {
-				if err := m.AfterAgenticModel(ctx, agState); err != nil {
 					return nil, err
 				}
 			}

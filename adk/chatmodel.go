@@ -238,14 +238,6 @@ type AgentMiddleware struct {
 	// AfterChatModel is called after each ChatModel invocation, allowing modification of the agent state.
 	AfterChatModel func(context.Context, *ChatModelAgentState) error
 
-	// BeforeAgenticModel is called before each AgenticModel invocation, allowing modification of the agent state.
-	// This is the counterpart of BeforeChatModel for agents that use *schema.AgenticMessage.
-	BeforeAgenticModel func(context.Context, *TypedChatModelAgentState[*schema.AgenticMessage]) error
-
-	// AfterAgenticModel is called after each AgenticModel invocation, allowing modification of the agent state.
-	// This is the counterpart of AfterChatModel for agents that use *schema.AgenticMessage.
-	AfterAgenticModel func(context.Context, *TypedChatModelAgentState[*schema.AgenticMessage]) error
-
 	// WrapToolCall wraps tool calls with custom middleware logic.
 	// Each middleware contains Invokable and/or Streamable functions for tool calls.
 	WrapToolCall compose.ToolMiddleware

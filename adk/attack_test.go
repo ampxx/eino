@@ -199,28 +199,26 @@ func TestAttack_CrossTypeAgentToolGracefulError(t *testing.T) {
 	runner := NewRunner(ctx, RunnerConfig{Agent: outerAgent, EnableStreaming: true})
 	iter := runner.Query(ctx, "test cross-type")
 
-	var foundError bool
-	var lastErr error
+	var capturedErr error
 	for {
 		event, ok := iter.Next()
 		if !ok {
 			break
 		}
 		if event.Err != nil {
-			foundError = true
-			lastErr = event.Err
+			capturedErr = event.Err
 			t.Logf("Cross-type error message: %v", event.Err)
 		}
 	}
 
-	if !foundError {
+	if capturedErr == nil {
 		t.Log("DESIGN CONCERN: Cross-type agent tool (AgenticMessage sub-agent in Message agent) " +
 			"only errors at event forwarding time when streaming is enabled. " +
 			"The error check happens in the gen.Send path, which is only exercised " +
 			"when the outer agent actually calls the tool AND streaming is enabled. " +
 			"Without streaming, the tool result is returned as a string, so no type mismatch occurs.")
 	} else {
-		assert.Contains(t, lastErr.Error(), "cross-message-type",
+		assert.Contains(t, capturedErr.Error(), "cross-message-type",
 			"Error should mention cross-message-type incompatibility")
 	}
 }
@@ -454,17 +452,17 @@ func TestAttack_AgenticStreamingModelError(t *testing.T) {
 
 	require.NotPanics(t, func() {
 		iter := runner.Query(ctx, "stream error")
-		var foundErr bool
+		var capturedErr error
 		for {
 			event, ok := iter.Next()
 			if !ok {
 				break
 			}
 			if event.Err != nil {
-				foundErr = true
+				capturedErr = event.Err
 			}
 		}
-		assert.True(t, foundErr)
+		require.Error(t, capturedErr, "streaming model error should propagate")
 	})
 }
 

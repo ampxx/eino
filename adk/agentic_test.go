@@ -1030,7 +1030,7 @@ func TestAgenticSequentialAgentWithExit(t *testing.T) {
 	assert.True(t, ok)
 	assert.Nil(t, event1.Err)
 	assert.NotNil(t, event1.Output)
-	assert.NotNil(t, event1.Action)
+	require.NotNil(t, event1.Action)
 	assert.True(t, event1.Action.Exit)
 
 	_, ok = iterator.Next()
@@ -1293,7 +1293,7 @@ func TestAgenticSimpleInterrupt(t *testing.T) {
 		}
 	}
 
-	assert.NotNil(t, interruptEvent)
+	require.NotNil(t, interruptEvent)
 	assert.Equal(t, data, interruptEvent.Action.Interrupted.Data)
 	assert.NotEmpty(t, interruptEvent.Action.Interrupted.InterruptContexts[0].ID)
 	assert.True(t, interruptEvent.Action.Interrupted.InterruptContexts[0].IsRootCause)
@@ -1377,11 +1377,11 @@ func TestAgenticMultiAgentInterrupt(t *testing.T) {
 		}
 	}
 
-	assert.NotNil(t, transferEvent)
-	assert.NotNil(t, transferEvent.Action.TransferToAgent)
+	require.NotNil(t, transferEvent)
+	require.NotNil(t, transferEvent.Action.TransferToAgent)
 
-	assert.NotNil(t, interruptEvent)
-	assert.NotNil(t, interruptEvent.Action.Interrupted)
+	require.NotNil(t, interruptEvent)
+	require.NotNil(t, interruptEvent.Action.Interrupted)
 	assert.Len(t, interruptEvent.Action.Interrupted.InterruptContexts, 1)
 	assert.Equal(t, "hello world", interruptEvent.Action.Interrupted.InterruptContexts[0].Info)
 	assert.True(t, interruptEvent.Action.Interrupted.InterruptContexts[0].IsRootCause)
@@ -1536,9 +1536,9 @@ func TestCascadingTyped_TypedStatefulInterrupt(t *testing.T) {
 	}
 
 	event := TypedStatefulInterrupt[*schema.AgenticMessage](ctx, "please confirm", &myState{Count: 42})
-	assert.NotNil(t, event)
-	assert.NotNil(t, event.Action)
-	assert.NotNil(t, event.Action.Interrupted)
+	require.NotNil(t, event)
+	require.NotNil(t, event.Action)
+	require.NotNil(t, event.Action.Interrupted)
 }
 
 func TestCascadingTyped_TypedEventFromMessage(t *testing.T) {
@@ -1620,10 +1620,12 @@ func TestCoverage_TypedSendTransferEvents_Agentic(t *testing.T) {
 
 	require.Len(t, events, 4)
 	assert.NotNil(t, events[0].Output)
-	assert.NotNil(t, events[1].Action)
+	require.NotNil(t, events[1].Action)
+	require.NotNil(t, events[1].Action.TransferToAgent)
 	assert.Equal(t, "agent-b", events[1].Action.TransferToAgent.DestAgentName)
 	assert.NotNil(t, events[2].Output)
-	assert.NotNil(t, events[3].Action)
+	require.NotNil(t, events[3].Action)
+	require.NotNil(t, events[3].Action.TransferToAgent)
 	assert.Equal(t, "agent-c", events[3].Action.TransferToAgent.DestAgentName)
 }
 

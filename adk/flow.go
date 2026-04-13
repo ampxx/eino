@@ -645,11 +645,39 @@ func (a *typedFlowAgent[M]) deepCopy() *typedFlowAgent[M] {
 	return ret
 }
 
+func flowAgentToTyped(cfa *flowAgent) *typedFlowAgent[*schema.Message] {
+	tfa := &typedFlowAgent[*schema.Message]{
+		TypedAgent:               cfa.Agent,
+		disallowTransferToParent: cfa.disallowTransferToParent,
+		checkPointStore:          cfa.checkPointStore,
+	}
+	if cfa.historyRewriter != nil {
+		hr := cfa.historyRewriter
+		tfa.historyRewriter = func(ctx context.Context, entries []*typedHistoryEntry[*schema.Message]) ([]*schema.Message, error) {
+			concrete := make([]*HistoryEntry, len(entries))
+			for i, e := range entries {
+				concrete[i] = &HistoryEntry{IsUserInput: e.IsUserInput, AgentName: e.AgentName, Message: e.Message}
+			}
+			return hr(ctx, concrete)
+		}
+	}
+	for _, sa := range cfa.subAgents {
+		child := flowAgentToTyped(sa)
+		child.parentAgent = tfa
+		tfa.subAgents = append(tfa.subAgents, child)
+	}
+	return tfa
+}
+
 func toTypedFlowAgent[M MessageType](ctx context.Context, agent TypedAgent[M], opts ...typedAgentOption[M]) *typedFlowAgent[M] {
 	var fa *typedFlowAgent[M]
 	var ok bool
 	if fa, ok = agent.(*typedFlowAgent[M]); !ok {
-		fa = &typedFlowAgent[M]{TypedAgent: agent}
+		if cfa, ok2 := any(agent).(*flowAgent); ok2 {
+			fa, _ = any(flowAgentToTyped(cfa)).(*typedFlowAgent[M])
+		} else {
+			fa = &typedFlowAgent[M]{TypedAgent: agent}
+		}
 	} else {
 		fa = fa.deepCopy()
 	}

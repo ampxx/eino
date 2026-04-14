@@ -86,6 +86,8 @@ A few things I've found useful while digging into the codebase:
 - The `compose` package is the best starting point — `Chain` covers most linear use cases before you need a full `Graph`.
 - When debugging graph execution, setting `EINO_LOG_LEVEL=debug` in your environment gives verbose node-level output.
 - Tool calling works well with OpenAI-compatible APIs; see `examples/tool_calling` for a minimal working setup.
+- `Graph` vs `Chain`: use `Chain` for straight-line flows, reach for `Graph` only when you need branching or fan-out — the extra setup cost is real.
+- Parallel node execution in a `Graph` is opt-in; nodes on independent branches run concurrently by default once the graph is compiled, which was a pleasant surprise.
 
 ## Contributing
 
@@ -94,13 +96,3 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feat/amazing-feature`)
 3. Commit your changes following our [commit conventions](.github/.commit-rules.json)
-4. Push to the branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request using our [PR template](.github/PULL_REQUEST_TEMPLATE.md)
-
-## License
-
-This project is licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-This project is a fork of [cloudwego/eino](https://github.com/cloudwego/eino). We are grateful to the original authors and contributors.

@@ -79,6 +79,14 @@ func main() {
 - [Pipeline Building](docs/pipelines.md)
 - [Examples](examples/)
 
+## Personal Notes
+
+A few things I've found useful while digging into the codebase:
+
+- The `compose` package is the best starting point — `Chain` covers most linear use cases before you need a full `Graph`.
+- When debugging graph execution, setting `EINO_LOG_LEVEL=debug` in your environment gives verbose node-level output.
+- Tool calling works well with OpenAI-compatible APIs; see `examples/tool_calling` for a minimal working setup.
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

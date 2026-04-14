@@ -5,6 +5,8 @@
 
 Eino is a fork of [cloudwego/eino](https://github.com/cloudwego/eino) — a powerful Go framework for building LLM-powered applications with composable, type-safe components.
 
+> **Personal fork**: I'm using this to experiment with custom LLM integrations and learn the graph-based pipeline internals. Not intended for production use.
+
 ## Overview
 
 Eino provides a clean, extensible architecture for constructing AI pipelines, agents, and workflows. It emphasizes:

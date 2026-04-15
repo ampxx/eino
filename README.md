@@ -88,4 +88,4 @@ A few things I've found useful while digging into the codebase:
 - Tool calling works well with OpenAI-compatible APIs; see `examples/tool_calling` for a minimal working setup.
 - `Graph` vs `Chain`: use `Chain` for straight-line flows, reach for `Graph` only when you need branching or fan-out — the extra setup cost is real.
 - Parallel node execution in a `Graph` is opt-in; nodes on independent branches run concurrently by default once the graph is compiled.
-- **Gotcha**: if you're hitting context cancellation errors mid-graph, check whether your LLM client respects `ctx` on streaming calls — some wrappers swallow the context and never propagate cancellation.
+- Context cancellation propagates correctly through the graph — wrapping your root context with a timeout (`context.WithTimeout`) is an easy way to guard against runaway LLM calls.

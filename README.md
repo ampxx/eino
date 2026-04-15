@@ -87,12 +87,6 @@ A few things I've found useful while digging into the codebase:
 - When debugging graph execution, setting `EINO_LOG_LEVEL=debug` in your environment gives verbose node-level output.
 - Tool calling works well with OpenAI-compatible APIs; see `examples/tool_calling` for a minimal working setup.
 - `Graph` vs `Chain`: use `Chain` for straight-line flows, reach for `Graph` only when you need branching or fan-out — the extra setup cost is real.
-- Parallel node execution in a `Graph` is opt-in; nodes on independent branches run concurrently by default once the graph is compiled, which was a pleasant surprise.
-
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes following our [commit conventions](.github/.commit-rules.json)
+- Parallel node execution in a `Graph` is opt-in; nodes on independent branches run concurrently by default once the graph is compiled.
+- Context cancellation propagates correctly through the whole graph — wrapping your root context with a timeout is a good habit to avoid hung pipelines during LLM calls.
+- TODO: explore whether custom `StateKey` types can be used to pass request-scoped metadata (e.g. user ID) without threading it through every node signature.

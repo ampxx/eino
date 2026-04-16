@@ -88,4 +88,4 @@ A few things I've found useful while digging into the codebase:
 - Tool calling works well with OpenAI-compatible APIs; see `examples/tool_calling` for a minimal working setup.
 - `Graph` vs `Chain`: use `Chain` for straight-line flows, reach for `Graph` only when you need branching or fan-out — the extra setup cost is real.
 - Parallel node execution in a `Graph` is opt-in; nodes on independent branches run concurrently by default once the graph is compiled.
-- Context cancellation propagates correctly through the whole graph — wrapping your root context with a timeout is a good habit to avoid hung pipelines during LLM calls.
+- **Context cancellation**: always pass a cancellable context when invoking chains in tests — I've been bitten by hung goroutines when an LLM call stalls and there's no timeout set.
